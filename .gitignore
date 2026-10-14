@@ -1,0 +1,12 @@
+# Rust
+/target
+**/target
+
+# Soroban / Stellar CLI
+*.wasm
+.soroban/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

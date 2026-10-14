@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "contracts/attestation",
+    "contracts/help_request",
+    "contracts/reputation",
+    "shared",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/StellarAid-network/contracts"
+rust-version = "1.82"
+
+[workspace.dependencies]
+soroban-sdk = "29.0.1"
+shared = { path = "shared" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+overflow-checks = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true

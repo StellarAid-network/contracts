@@ -1,0 +1,11 @@
+[package]
+name = "shared"
+description = "Shared types, constants, and helper traits for StellarAid contracts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+soroban-sdk.workspace = true
