@@ -1,0 +1,18 @@
+[package]
+name = "help_request"
+description = "StellarAid Help Request escrow contract: goals, deadlines, refunds, milestones"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+soroban-sdk.workspace = true
+shared.workspace = true
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
