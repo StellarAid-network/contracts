@@ -16,3 +16,10 @@ shared.workspace = true
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+
+# ─── docs ────────────────────────────────────────────────────────────────────
+# Core flow implemented: initialize, set_config, create_request, contribute,
+# finalize, cancel, refund, get_request, get_contribution.
+# Not yet implemented: submit_milestone, approve_milestone, release_milestone
+# (milestone support), upgrade mechanism (upgrade_contract).
+# ─────────────────────────────────────────────────────────────────────────────
