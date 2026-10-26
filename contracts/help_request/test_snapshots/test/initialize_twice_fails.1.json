@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 2,
+    "address": 4,
     "nonce": 0,
     "mux_id": 0
   },
@@ -25,7 +25,11 @@
                         "symbol": "allowed_tokens"
                       },
                       "val": {
-                        "vec": []
+                        "vec": [
+                          {
+                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                          }
+                        ]
                       }
                     },
                     {
@@ -43,7 +47,7 @@
                       "val": {
                         "vec": [
                           {
-                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                           }
                         ]
                       }
@@ -53,7 +57,7 @@
                         "symbol": "min_contribution"
                       },
                       "val": {
-                        "i128": "1"
+                        "i128": "100"
                       }
                     },
                     {
@@ -125,7 +129,11 @@
                               "symbol": "allowed_tokens"
                             },
                             "val": {
-                              "vec": []
+                              "vec": [
+                                {
+                                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                                }
+                              ]
                             }
                           },
                           {
@@ -143,7 +151,7 @@
                             "val": {
                               "vec": [
                                 {
-                                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                                 }
                               ]
                             }
@@ -153,7 +161,7 @@
                               "symbol": "min_contribution"
                             },
                             "val": {
-                              "i128": "1"
+                              "i128": "100"
                             }
                           },
                           {
@@ -163,6 +171,18 @@
                             "val": "void"
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "NextRequestId"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u64": "0"
                       }
                     }
                   ]
