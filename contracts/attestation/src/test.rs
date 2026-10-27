@@ -113,3 +113,25 @@ fn test_attestation_lifecycle() {
     );
     assert_eq!(removed_attest, Err(Ok(Error::Unauthorized)));
 }
+
+#[test]
+fn test_attestation_not_found_and_empty_subjects() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(AttestationContract, ());
+    let client = AttestationContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let attestor = Address::generate(&env);
+    let subject = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    // Subject with no attestations returns empty Vec
+    assert_eq!(client.get_attestations(&subject).len(), 0);
+
+    // Revoking non-existent attestation fails with AttestationNotFound
+    let not_found = client.try_revoke(&attestor, &999);
+    assert_eq!(not_found, Err(Ok(Error::AttestationNotFound)));
+}

@@ -107,3 +107,56 @@ fn test_config_update() {
     assert_eq!(updated.tier2_threshold, 25);
     assert_eq!(updated.tier3_threshold, 80);
 }
+
+#[test]
+fn test_negative_deltas_and_badge_boundaries() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Reputation, ());
+    let client = ReputationClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let reporter = Address::generate(&env);
+    let subject = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.add_reporter(&reporter);
+
+    // Initial score is 0, no badges
+    assert_eq!(client.get_score(&subject), 0);
+    assert_eq!(client.get_badges(&subject).len(), 0);
+
+    // Score just below tier 1 threshold (9 < 10)
+    client.record_event(
+        &reporter,
+        &subject,
+        &symbol_short!("boost"),
+        &9,
+        &String::from_str(&env, "ref-1"),
+    );
+    assert_eq!(client.get_score(&subject), 9);
+    assert_eq!(client.get_badges(&subject).len(), 0);
+
+    // Hit exact tier 1 threshold (10)
+    client.record_event(
+        &reporter,
+        &subject,
+        &symbol_short!("boost"),
+        &1,
+        &String::from_str(&env, "ref-2"),
+    );
+    assert_eq!(client.get_score(&subject), 10);
+    assert_eq!(client.get_badges(&subject).len(), 1);
+
+    // Negative delta reduces score below threshold (10 - 2 = 8)
+    client.record_event(
+        &reporter,
+        &subject,
+        &symbol_short!("penalty"),
+        &-2,
+        &String::from_str(&env, "ref-3"),
+    );
+    assert_eq!(client.get_score(&subject), 8);
+    assert_eq!(client.get_badges(&subject).len(), 0);
+}
