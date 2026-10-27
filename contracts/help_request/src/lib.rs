@@ -117,6 +117,7 @@ impl HelpRequest {
             token: token.clone(),
             goal,
             raised: 0,
+            total_released: 0,
             deadline,
             status: Status::Open,
             content_hash,

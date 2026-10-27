@@ -54,6 +54,8 @@ pub struct Request {
     pub goal: i128,
     /// Total contributed so far.
     pub raised: i128,
+    /// Total amount released across milestones.
+    pub total_released: i128,
     /// Funding deadline (ledger timestamp, seconds).
     pub deadline: Timestamp,
     /// Current lifecycle status.
@@ -99,4 +101,8 @@ pub enum DataKey {
     Request(u64),
     /// A contributor's total for a request (persistent storage).
     Contribution(u64, Address),
+    /// Tracks if an approver has approved a milestone: (request_id, index, approver).
+    MilestoneApprover(u64, u32, Address),
+    /// Tracks the number of approvals for a milestone: (request_id, index).
+    MilestoneApprovalCount(u64, u32),
 }

@@ -28,4 +28,22 @@ pub enum Error {
     TokenNotAllowed = 9,
     /// No refundable balance.
     NothingToRefund = 10,
+    /// Milestone index out of bounds.
+    MilestoneNotFound = 11,
+    /// Milestone already released.
+    MilestoneAlreadyReleased = 12,
+    /// Milestone evidence not yet submitted.
+    MilestoneNotSubmitted = 13,
+    /// Milestone evidence already submitted.
+    MilestoneAlreadySubmitted = 14,
+    /// Caller has already approved this milestone.
+    MilestoneAlreadyApproved = 15,
+    /// Milestone has not reached required approval threshold.
+    InsufficientApprovals = 16,
+    /// Milestone schedule amounts do not sum to goal or invalid count.
+    InvalidMilestoneSchedule = 17,
+    /// Milestones must be submitted and released in sequential order.
+    MilestoneOutOfOrder = 18,
+    /// Request is not in a disputed or refundable state.
+    NotDisputedOrCancelled = 19,
 }

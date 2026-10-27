@@ -647,6 +647,14 @@
                     "val": {
                       "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
                     }
+                  },
+                  {
+                    "key": {
+                      "symbol": "total_released"
+                    },
+                    "val": {
+                      "i128": "0"
+                    }
                   }
                 ]
               }
