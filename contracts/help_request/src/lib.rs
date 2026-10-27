@@ -492,6 +492,152 @@ impl HelpRequest {
         Ok(())
     }
 
+    /// Pay out an approved milestone to the request creator.
+    ///
+    /// Anyone may call this once sufficient approvals exist.
+    /// Checks-effects-interactions: updates contract state and milestone status
+    /// before executing the token transfer.
+    pub fn release_milestone(
+        env: Env,
+        request_id: u64,
+        index: u32,
+    ) -> Result<(), Error> {
+        let storage = env.storage().instance();
+        let config: Config = storage.get(&DataKey::Config).ok_or(Error::NotInitialized)?;
+
+        let mut request: Request = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Request(request_id))
+            .ok_or(Error::RequestNotFound)?;
+
+        if request.status != Status::Funded && request.status != Status::Releasing {
+            return Err(Error::NotOpen);
+        }
+
+        if index >= request.milestones.len() {
+            return Err(Error::MilestoneNotFound);
+        }
+
+        // Verify previous milestones are already released.
+        for i in 0..index {
+            let prev = request.milestones.get(i).unwrap();
+            if !prev.released {
+                return Err(Error::MilestoneOutOfOrder);
+            }
+        }
+
+        let mut milestone = request.milestones.get(index).unwrap();
+        if milestone.released {
+            return Err(Error::MilestoneAlreadyReleased);
+        }
+        if milestone.evidence_hash.is_none() {
+            return Err(Error::MilestoneNotSubmitted);
+        }
+
+        let count_key = DataKey::MilestoneApprovalCount(request_id, index);
+        let approvals: u32 = env.storage().persistent().get(&count_key).unwrap_or(0u32);
+        if approvals < config.approval_threshold {
+            return Err(Error::InsufficientApprovals);
+        }
+
+        // --- EFFECTS (state update before interaction) ---
+        milestone.released = true;
+        request.milestones.set(index, milestone.clone());
+
+        request.total_released = request
+            .total_released
+            .checked_add_amount(milestone.amount)
+            .ok_or(Error::InvalidAmount)?;
+
+        let mut all_released = true;
+        for i in 0..request.milestones.len() {
+            if !request.milestones.get(i).unwrap().released {
+                all_released = false;
+                break;
+            }
+        }
+
+        if all_released {
+            request.status = Status::Completed;
+        } else {
+            request.status = Status::Releasing;
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Request(request_id), &request);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Request(request_id),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        // --- INTERACTIONS (transfer tokens to creator) ---
+        let contract_address = env.current_contract_address();
+        token::Client::new(&env, &request.token).transfer(
+            &contract_address,
+            &request.creator,
+            &milestone.amount,
+        );
+
+        events::milestone_released(&env, request_id, index, milestone.amount);
+
+        Ok(())
+    }
+
+    /// Mark a milestone as disputed/rejected by an authorized approver.
+    ///
+    /// Transitions the request to Disputed status, freezing further milestone
+    /// releases and allowing contributors to claim proportional refunds of unreleased funds.
+    pub fn dispute_milestone(
+        env: Env,
+        request_id: u64,
+        index: u32,
+        approver: Address,
+    ) -> Result<(), Error> {
+        approver.require_auth();
+
+        let storage = env.storage().instance();
+        let config: Config = storage.get(&DataKey::Config).ok_or(Error::NotInitialized)?;
+
+        if !config.approvers.contains(&approver) {
+            return Err(Error::Unauthorized);
+        }
+
+        let mut request: Request = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Request(request_id))
+            .ok_or(Error::RequestNotFound)?;
+
+        if request.status != Status::Funded && request.status != Status::Releasing {
+            return Err(Error::NotOpen);
+        }
+
+        if index >= request.milestones.len() {
+            return Err(Error::MilestoneNotFound);
+        }
+
+        let milestone = request.milestones.get(index).unwrap();
+        if milestone.released {
+            return Err(Error::MilestoneAlreadyReleased);
+        }
+
+        request.status = Status::Disputed;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Request(request_id), &request);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Request(request_id),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        Ok(())
+    }
+
     /// Withdraw a contribution from a Failed or Cancelled request.
     ///
     /// `contributor` must authorize the call. Checks-effects-interactions: the stored
