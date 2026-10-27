@@ -148,7 +148,7 @@ fn create_request_success() {
     let creator = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 86_400;
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     assert_eq!(id, 0u64);
 
     let req = client.get_request(&id);
@@ -165,8 +165,8 @@ fn create_request_ids_increment() {
     let creator = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 86_400;
 
-    let id0 = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
-    let id1 = client.create_request(&creator, &token, &2_000_000i128, &deadline, &dummy_hash(&env));
+    let id0 = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
+    let id1 = client.create_request(&creator, &token, &2_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     assert_eq!(id0, 0u64);
     assert_eq!(id1, 1u64);
 }
@@ -178,7 +178,7 @@ fn create_request_disallowed_token_fails() {
     let bad_token = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 86_400;
 
-    let result = client.try_create_request(&creator, &bad_token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let result = client.try_create_request(&creator, &bad_token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     assert!(result.is_err());
 }
 
@@ -188,7 +188,7 @@ fn create_request_deadline_in_past_fails() {
     let creator = Address::generate(&env);
     let deadline = env.ledger().timestamp() - 1;
 
-    let result = client.try_create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let result = client.try_create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     assert!(result.is_err());
 }
 
@@ -198,7 +198,7 @@ fn create_request_deadline_exactly_now_fails() {
     let creator = Address::generate(&env);
     let deadline = env.ledger().timestamp();
 
-    let result = client.try_create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let result = client.try_create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     assert!(result.is_err());
 }
 
@@ -208,7 +208,96 @@ fn create_request_zero_goal_fails() {
     let creator = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 86_400;
 
-    let result = client.try_create_request(&creator, &token, &0i128, &deadline, &dummy_hash(&env));
+    let result = client.try_create_request(&creator, &token, &0i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
+    assert!(result.is_err());
+}
+
+#[test]
+fn create_request_with_custom_milestones_success() {
+    let (env, _contract_id, _admin, token, client) = setup_contract();
+    let creator = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(Milestone {
+        index: 0,
+        amount: 400_000,
+        evidence_hash: None,
+        released: false,
+    });
+    milestones.push_back(Milestone {
+        index: 1,
+        amount: 600_000,
+        evidence_hash: None,
+        released: false,
+    });
+
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &milestones, &dummy_hash(&env));
+    let req = client.get_request(&id);
+    assert_eq!(req.milestones.len(), 2);
+    assert_eq!(req.milestones.get(0).unwrap().amount, 400_000);
+    assert_eq!(req.milestones.get(1).unwrap().amount, 600_000);
+}
+
+#[test]
+fn create_request_milestones_sum_mismatch_fails() {
+    let (env, _contract_id, _admin, token, client) = setup_contract();
+    let creator = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(Milestone {
+        index: 0,
+        amount: 400_000,
+        evidence_hash: None,
+        released: false,
+    });
+    milestones.push_back(Milestone {
+        index: 1,
+        amount: 500_000, // Sum = 900_000 != 1_000_000
+        evidence_hash: None,
+        released: false,
+    });
+
+    let result = client.try_create_request(&creator, &token, &1_000_000i128, &deadline, &milestones, &dummy_hash(&env));
+    assert!(result.is_err());
+}
+
+#[test]
+fn create_request_milestones_out_of_order_fails() {
+    let (env, _contract_id, _admin, token, client) = setup_contract();
+    let creator = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(Milestone {
+        index: 1, // should be 0
+        amount: 1_000_000,
+        evidence_hash: None,
+        released: false,
+    });
+
+    let result = client.try_create_request(&creator, &token, &1_000_000i128, &deadline, &milestones, &dummy_hash(&env));
+    assert!(result.is_err());
+}
+
+#[test]
+fn create_request_too_many_milestones_fails() {
+    let (env, _contract_id, _admin, token, client) = setup_contract();
+    let creator = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let mut milestones = Vec::new(&env);
+    for i in 0..11 {
+        milestones.push_back(Milestone {
+            index: i,
+            amount: 100_000,
+            evidence_hash: None,
+            released: false,
+        });
+    }
+
+    let result = client.try_create_request(&creator, &token, &1_100_000i128, &deadline, &milestones, &dummy_hash(&env));
     assert!(result.is_err());
 }
 
@@ -232,7 +321,7 @@ fn contribute_success_and_tracks_balance() {
 
     mint(&env, &token, &contributor, 500_000);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &200_000i128);
 
     let req = client.get_request(&id);
@@ -254,7 +343,7 @@ fn contribute_accumulates_for_same_contributor() {
 
     mint(&env, &token, &contributor, 600_000);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &200_000i128);
     client.contribute(&id, &contributor, &300_000i128);
 
@@ -271,7 +360,7 @@ fn contribute_reaches_goal_transitions_to_funded() {
 
     mint(&env, &token, &contributor, goal);
 
-    let id = client.create_request(&creator, &token, &goal, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &goal, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &goal);
 
     let req = client.get_request(&id);
@@ -287,7 +376,7 @@ fn contribute_below_minimum_fails() {
 
     mint(&env, &token, &contributor, 500);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     // min_contribution = 100; contributing 50 should fail
     let result = client.try_contribute(&id, &contributor, &50i128);
     assert!(result.is_err());
@@ -300,7 +389,7 @@ fn contribute_zero_fails() {
     let contributor = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 86_400;
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     let result = client.try_contribute(&id, &contributor, &0i128);
     assert!(result.is_err());
 }
@@ -315,7 +404,7 @@ fn contribute_after_deadline_fails() {
 
     mint(&env, &token, &contributor, 500_000);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
 
     // Advance past deadline
     set_time(&env, deadline + 1);
@@ -334,7 +423,7 @@ fn contribute_exactly_at_deadline_fails() {
 
     mint(&env, &token, &contributor, 500_000);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
 
     // Advance to exactly the deadline
     set_time(&env, deadline);
@@ -353,7 +442,7 @@ fn contribute_one_second_before_deadline_succeeds() {
 
     mint(&env, &token, &contributor, 500_000);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
 
     // Advance to one second before deadline
     set_time(&env, deadline - 1);
@@ -371,7 +460,7 @@ fn contribute_to_funded_request_fails() {
 
     mint(&env, &token, &contributor, goal * 2);
 
-    let id = client.create_request(&creator, &token, &goal, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &goal, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &goal);
 
     let result = client.try_contribute(&id, &contributor, &goal);
@@ -396,7 +485,7 @@ fn finalize_before_deadline_fails() {
     let creator = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 86_400;
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
 
     let result = client.try_finalize(&id);
     assert!(result.is_err());
@@ -409,7 +498,7 @@ fn finalize_one_second_before_deadline_fails() {
     let now = env.ledger().timestamp();
     let deadline = now + 100;
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
 
     set_time(&env, deadline - 1);
 
@@ -424,7 +513,7 @@ fn finalize_exactly_at_deadline_goal_not_met_fails_request() {
     let now = env.ledger().timestamp();
     let deadline = now + 100;
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
 
     set_time(&env, deadline);
 
@@ -440,7 +529,7 @@ fn finalize_one_second_after_deadline_transitions_failed() {
     let now = env.ledger().timestamp();
     let deadline = now + 100;
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
 
     set_time(&env, deadline + 1);
 
@@ -461,7 +550,7 @@ fn finalize_goal_already_met_still_funded() {
 
     mint(&env, &token, &contributor, goal);
 
-    let id = client.create_request(&creator, &token, &goal, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &goal, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &goal);
 
     // Already Funded; finalize on non-Open request should fail
@@ -479,7 +568,7 @@ fn cancel_by_creator_succeeds() {
     let creator = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 86_400;
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.cancel(&id);
 
     let req = client.get_request(&id);
@@ -496,7 +585,7 @@ fn cancel_funded_request_fails() {
 
     mint(&env, &token, &contributor, goal);
 
-    let id = client.create_request(&creator, &token, &goal, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &goal, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &goal);
 
     let result = client.try_cancel(&id);
@@ -525,7 +614,7 @@ fn refund_after_failed_succeeds() {
     mint(&env, &token, &contributor, 500_000);
     let token_client = token::Client::new(&env, &token);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &500_000i128);
 
     set_time(&env, deadline + 1);
@@ -550,7 +639,7 @@ fn refund_after_cancelled_succeeds() {
     mint(&env, &token, &contributor, 300_000);
     let token_client = token::Client::new(&env, &token);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &300_000i128);
     client.cancel(&id);
     client.refund(&id, &contributor);
@@ -568,7 +657,7 @@ fn double_refund_fails() {
 
     mint(&env, &token, &contributor, 500_000);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &500_000i128);
     client.cancel(&id);
     client.refund(&id, &contributor);
@@ -584,7 +673,7 @@ fn refund_with_no_contribution_fails() {
     let non_contributor = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 86_400;
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.cancel(&id);
 
     let result = client.try_refund(&id, &non_contributor);
@@ -600,7 +689,7 @@ fn refund_from_open_request_fails() {
 
     mint(&env, &token, &contributor, 500_000);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &500_000i128);
 
     let result = client.try_refund(&id, &contributor);
@@ -630,7 +719,7 @@ fn fund_conservation_multiple_contributors_all_refund() {
 
     let token_client = token::Client::new(&env, &token);
 
-    let id = client.create_request(&creator, &token, &(total + 1), &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &(total + 1), &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &c1, &amounts[0]);
     client.contribute(&id, &c2, &amounts[1]);
     client.contribute(&id, &c3, &amounts[2]);
@@ -675,7 +764,7 @@ fn fund_conservation_cancel_partial_contributions() {
 
     let token_client = token::Client::new(&env, &token);
 
-    let id = client.create_request(&creator, &token, &(total + 1_000_000), &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &(total + 1_000_000), &deadline, &Vec::new(&env), &dummy_hash(&env));
     for (c, a) in contributors.iter().zip(amounts.iter()) {
         client.contribute(&id, c, a);
     }
@@ -706,7 +795,7 @@ fn create_request_requires_auth() {
     let creator = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 86_400;
     // With mock_all_auths, this passes — auth is wired and exercised.
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     assert_eq!(id, 0u64);
 }
 
@@ -719,7 +808,7 @@ fn contribute_requires_auth() {
 
     mint(&env, &token, &contributor, 500_000);
 
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     // With mock_all_auths, auth is satisfied; verifies require_auth is present.
     client.contribute(&id, &contributor, &200_000i128);
 }
@@ -729,7 +818,7 @@ fn cancel_requires_creator_auth() {
     let (env, _contract_id, _admin, token, client) = setup_contract();
     let creator = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 86_400;
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     // With mock_all_auths, this passes — verifying auth is wired.
     client.cancel(&id);
 }
@@ -742,7 +831,7 @@ fn refund_requires_contributor_auth() {
     let deadline = env.ledger().timestamp() + 86_400;
 
     mint(&env, &token, &contributor, 500_000);
-    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &dummy_hash(&env));
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
     client.contribute(&id, &contributor, &500_000i128);
     client.cancel(&id);
     // With mock_all_auths, this passes — verifying auth is wired.

@@ -183,6 +183,9 @@
                   "u64": "1000100"
                 },
                 {
+                  "vec": []
+                },
+                {
                   "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
                 }
               ]
@@ -617,7 +620,42 @@
                       "symbol": "milestones"
                     },
                     "val": {
-                      "vec": []
+                      "vec": [
+                        {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "amount"
+                              },
+                              "val": {
+                                "i128": "750001"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "evidence_hash"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
+                                "symbol": "index"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "released"
+                              },
+                              "val": {
+                                "bool": false
+                              }
+                            }
+                          ]
+                        }
+                      ]
                     }
                   },
                   {

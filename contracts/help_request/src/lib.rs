@@ -83,6 +83,7 @@ impl HelpRequest {
         token: Address,
         goal: i128,
         deadline: u64,
+        milestones: Vec<Milestone>,
         content_hash: BytesN<32>,
     ) -> Result<u64, Error> {
         creator.require_auth();
@@ -106,6 +107,39 @@ impl HelpRequest {
             return Err(Error::DeadlinePassed);
         }
 
+        // Validate milestones schedule.
+        const MAX_MILESTONES: u32 = 10;
+        let final_milestones = if milestones.is_empty() {
+            let mut v = Vec::new(&env);
+            v.push_back(Milestone {
+                index: 0,
+                amount: goal,
+                evidence_hash: None,
+                released: false,
+            });
+            v
+        } else {
+            let count = milestones.len();
+            if count > MAX_MILESTONES {
+                return Err(Error::InvalidMilestoneSchedule);
+            }
+            let mut sum: i128 = 0;
+            for i in 0..count {
+                let m = milestones.get(i).unwrap();
+                if m.index != i {
+                    return Err(Error::MilestoneOutOfOrder);
+                }
+                if m.amount <= 0 || m.released || m.evidence_hash.is_some() {
+                    return Err(Error::InvalidMilestoneSchedule);
+                }
+                sum = sum.checked_add_amount(m.amount).ok_or(Error::InvalidAmount)?;
+            }
+            if sum != goal {
+                return Err(Error::InvalidMilestoneSchedule);
+            }
+            milestones
+        };
+
         // Assign request id.
         let id: u64 = storage.get(&DataKey::NextRequestId).unwrap_or(0u64);
         storage.set(&DataKey::NextRequestId, &(id + 1));
@@ -121,7 +155,7 @@ impl HelpRequest {
             deadline,
             status: Status::Open,
             content_hash,
-            milestones: Vec::new(&env),
+            milestones: final_milestones,
             created_at: now,
         };
 
