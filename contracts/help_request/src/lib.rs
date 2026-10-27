@@ -660,7 +660,10 @@ impl HelpRequest {
             .get(&DataKey::Request(request_id))
             .ok_or(Error::RequestNotFound)?;
 
-        if request.status != Status::Failed && request.status != Status::Cancelled {
+        if request.status != Status::Failed
+            && request.status != Status::Cancelled
+            && request.status != Status::Disputed
+        {
             return Err(Error::NotOpen);
         }
 
@@ -672,6 +675,26 @@ impl HelpRequest {
             .unwrap_or(0i128);
 
         if amount <= 0 {
+            return Err(Error::NothingToRefund);
+        }
+
+        let remaining_unreleased = request.raised - request.total_released;
+        if remaining_unreleased <= 0 {
+            return Err(Error::NothingToRefund);
+        }
+
+        // Proportional refund calculation:
+        // If no milestones released or Failed, full 100% refund of contributed amount.
+        // Otherwise, proportional share of remaining unreleased funds:
+        // refund_amount = (amount * remaining_unreleased) / request.raised.
+        let refund_amount = if request.total_released == 0 || request.status == Status::Failed {
+            amount
+        } else {
+            let prod = amount.checked_mul(remaining_unreleased).ok_or(Error::InvalidAmount)?;
+            prod / request.raised
+        };
+
+        if refund_amount <= 0 {
             return Err(Error::NothingToRefund);
         }
 
@@ -690,10 +713,10 @@ impl HelpRequest {
         token::Client::new(&env, &request.token).transfer(
             &contract_address,
             &contributor,
-            &amount,
+            &refund_amount,
         );
 
-        events::refunded(&env, request_id, contributor, amount);
+        events::refunded(&env, request_id, contributor, refund_amount);
 
         Ok(())
     }
