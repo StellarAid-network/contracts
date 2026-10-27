@@ -1,7 +1,5 @@
 use soroban_sdk::{contracttype, Address, BytesN, Vec};
 
-use shared::Timestamp;
-
 /// Lifecycle status of a help request.
 ///
 /// Mirrors the state machine documented in the repository README:
@@ -57,7 +55,7 @@ pub struct Request {
     /// Total amount released across milestones.
     pub total_released: i128,
     /// Funding deadline (ledger timestamp, seconds).
-    pub deadline: Timestamp,
+    pub deadline: u64,
     /// Current lifecycle status.
     pub status: Status,
     /// IPFS CID or content hash of the off-chain description.
@@ -65,7 +63,7 @@ pub struct Request {
     /// Milestone schedule; empty until milestones are configured.
     pub milestones: Vec<Milestone>,
     /// Creation timestamp.
-    pub created_at: Timestamp,
+    pub created_at: u64,
 }
 
 /// Contract configuration, set at initialization and updatable by the admin.
