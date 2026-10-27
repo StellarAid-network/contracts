@@ -837,3 +837,276 @@ fn refund_requires_contributor_auth() {
     // With mock_all_auths, this passes — verifying auth is wired.
     client.refund(&id, &contributor);
 }
+
+// ---------------------------------------------------------------------------
+// Milestone lifecycle and proportional refund tests
+// ---------------------------------------------------------------------------
+
+fn setup_milestone_contract() -> (
+    Env,
+    Address,
+    Address,
+    Address,
+    Address,
+    Address,
+    HelpRequestClient<'static>,
+) {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set(LedgerInfo {
+        timestamp: 1_000_000,
+        protocol_version: 29,
+        sequence_number: 100,
+        network_id: [0u8; 32],
+        base_reserve: 5_000_000,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 3_110_400,
+    });
+
+    let contract_id = env.register(HelpRequest, ());
+    let client = HelpRequestClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let approver1 = Address::generate(&env);
+    let approver2 = Address::generate(&env);
+    let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
+
+    let mut approvers = Vec::new(&env);
+    approvers.push_back(approver1.clone());
+    approvers.push_back(approver2.clone());
+
+    let config = Config {
+        allowed_tokens: Vec::from_array(&env, [token.clone()]),
+        min_contribution: 100,
+        approvers,
+        approval_threshold: 2,
+        reputation_contract: None,
+    };
+
+    client.initialize(&admin, &config);
+
+    (env, contract_id, admin, token, approver1, approver2, client)
+}
+
+#[test]
+fn milestone_full_lifecycle_success() {
+    let (env, contract_id, _admin, token, approver1, approver2, client) = setup_milestone_contract();
+    let creator = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(Milestone {
+        index: 0,
+        amount: 400_000,
+        evidence_hash: None,
+        released: false,
+    });
+    milestones.push_back(Milestone {
+        index: 1,
+        amount: 600_000,
+        evidence_hash: None,
+        released: false,
+    });
+
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &milestones, &dummy_hash(&env));
+
+    // Fund the request
+    mint(&env, &token, &contributor, 1_000_000);
+    client.contribute(&id, &contributor, &1_000_000i128);
+
+    let req = client.get_request(&id);
+    assert_eq!(req.status, Status::Funded);
+
+    // Milestone 0: Submit -> Approve -> Release
+    let evidence0 = BytesN::from_array(&env, &[1u8; 32]);
+    client.submit_milestone(&id, &0, &evidence0);
+    client.approve_milestone(&id, &0, &approver1);
+    client.approve_milestone(&id, &0, &approver2);
+    client.release_milestone(&id, &0);
+
+    let req = client.get_request(&id);
+    assert_eq!(req.status, Status::Releasing);
+    assert_eq!(req.total_released, 400_000);
+    let token_client = token::Client::new(&env, &token);
+    assert_eq!(token_client.balance(&creator), 400_000);
+    assert_eq!(token_client.balance(&contract_id), 600_000);
+
+    // Milestone 1: Submit -> Approve -> Release
+    let evidence1 = BytesN::from_array(&env, &[2u8; 32]);
+    client.submit_milestone(&id, &1, &evidence1);
+    client.approve_milestone(&id, &1, &approver1);
+    client.approve_milestone(&id, &1, &approver2);
+    client.release_milestone(&id, &1);
+
+    let req = client.get_request(&id);
+    assert_eq!(req.status, Status::Completed);
+    assert_eq!(req.total_released, 1_000_000);
+    assert_eq!(token_client.balance(&creator), 1_000_000);
+    assert_eq!(token_client.balance(&contract_id), 0);
+}
+
+#[test]
+fn milestone_insufficient_approvals_fails() {
+    let (env, _contract_id, _admin, token, approver1, _approver2, client) = setup_milestone_contract();
+    let creator = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(Milestone {
+        index: 0,
+        amount: 1_000_000,
+        evidence_hash: None,
+        released: false,
+    });
+
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &milestones, &dummy_hash(&env));
+    mint(&env, &token, &contributor, 1_000_000);
+    client.contribute(&id, &contributor, &1_000_000i128);
+
+    client.submit_milestone(&id, &0, &dummy_hash(&env));
+    // Only 1 of 2 required approvals
+    client.approve_milestone(&id, &0, &approver1);
+
+    let res = client.try_release_milestone(&id, &0);
+    assert!(res.is_err());
+}
+
+#[test]
+fn milestone_duplicate_approval_fails() {
+    let (env, _contract_id, _admin, token, approver1, _approver2, client) = setup_milestone_contract();
+    let creator = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
+    mint(&env, &token, &contributor, 1_000_000);
+    client.contribute(&id, &contributor, &1_000_000i128);
+
+    client.submit_milestone(&id, &0, &dummy_hash(&env));
+    client.approve_milestone(&id, &0, &approver1);
+
+    // Duplicate approval by approver1 fails
+    let res = client.try_approve_milestone(&id, &0, &approver1);
+    assert!(res.is_err());
+}
+
+#[test]
+fn milestone_unauthorized_approver_fails() {
+    let (env, _contract_id, _admin, token, _approver1, _approver2, client) = setup_milestone_contract();
+    let creator = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let random_user = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &Vec::new(&env), &dummy_hash(&env));
+    mint(&env, &token, &contributor, 1_000_000);
+    client.contribute(&id, &contributor, &1_000_000i128);
+
+    client.submit_milestone(&id, &0, &dummy_hash(&env));
+    let res = client.try_approve_milestone(&id, &0, &random_user);
+    assert!(res.is_err());
+}
+
+#[test]
+fn milestone_out_of_order_submit_fails() {
+    let (env, _contract_id, _admin, token, _approver1, _approver2, client) = setup_milestone_contract();
+    let creator = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(Milestone {
+        index: 0,
+        amount: 500_000,
+        evidence_hash: None,
+        released: false,
+    });
+    milestones.push_back(Milestone {
+        index: 1,
+        amount: 500_000,
+        evidence_hash: None,
+        released: false,
+    });
+
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &milestones, &dummy_hash(&env));
+    mint(&env, &token, &contributor, 1_000_000);
+    client.contribute(&id, &contributor, &1_000_000i128);
+
+    // Submitting milestone 1 before milestone 0 is released fails
+    let res = client.try_submit_milestone(&id, &1, &dummy_hash(&env));
+    assert!(res.is_err());
+}
+
+#[test]
+fn milestone_proportional_refund_exact_conservation() {
+    let (env, contract_id, _admin, token, approver1, approver2, client) = setup_milestone_contract();
+    let creator = Address::generate(&env);
+    let c1 = Address::generate(&env);
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back(Milestone {
+        index: 0,
+        amount: 400_000,
+        evidence_hash: None,
+        released: false,
+    });
+    milestones.push_back(Milestone {
+        index: 1,
+        amount: 600_000,
+        evidence_hash: None,
+        released: false,
+    });
+
+    let id = client.create_request(&creator, &token, &1_000_000i128, &deadline, &milestones, &dummy_hash(&env));
+
+    // Three contributors: 500k, 300k, 200k = 1,000,000 total
+    mint(&env, &token, &c1, 500_000);
+    mint(&env, &token, &c2, 300_000);
+    mint(&env, &token, &c3, 200_000);
+
+    client.contribute(&id, &c1, &500_000i128);
+    client.contribute(&id, &c2, &300_000i128);
+    client.contribute(&id, &c3, &200_000i128);
+
+    // Milestone 0 is completed and released: 400k to creator
+    client.submit_milestone(&id, &0, &dummy_hash(&env));
+    client.approve_milestone(&id, &0, &approver1);
+    client.approve_milestone(&id, &0, &approver2);
+    client.release_milestone(&id, &0);
+
+    let token_client = token::Client::new(&env, &token);
+    assert_eq!(token_client.balance(&creator), 400_000);
+    assert_eq!(token_client.balance(&contract_id), 600_000);
+
+    // Milestone 1 is disputed by approver
+    client.dispute_milestone(&id, &1, &approver1);
+    let req = client.get_request(&id);
+    assert_eq!(req.status, Status::Disputed);
+
+    // All three contributors claim proportional refunds of unreleased funds (600,000 remaining)
+    client.refund(&id, &c1);
+    client.refund(&id, &c2);
+    client.refund(&id, &c3);
+
+    let r1 = token_client.balance(&c1);
+    let r2 = token_client.balance(&c2);
+    let r3 = token_client.balance(&c3);
+
+    // c1: 500k * 600k / 1M = 300,000
+    // c2: 300k * 600k / 1M = 180,000
+    // c3: 200k * 600k / 1M = 120,000
+    assert_eq!(r1, 300_000);
+    assert_eq!(r2, 180_000);
+    assert_eq!(r3, 120_000);
+
+    // Invariant: Total in (1,000,000) == Total out (400,000 to creator + 600,000 to contributors)
+    let total_refunded = r1 + r2 + r3;
+    assert_eq!(total_refunded, 600_000);
+    assert_eq!(token_client.balance(&creator) + total_refunded, 1_000_000);
+    assert_eq!(token_client.balance(&contract_id), 0);
+}
