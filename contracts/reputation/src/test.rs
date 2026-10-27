@@ -1,27 +1,109 @@
+#![cfg(test)]
+
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{
+    symbol_short,
+    testutils::{Address as _, Events},
+    Address, Env, String,
+};
 
 #[test]
-fn initialize_succeeds_once() {
+fn test_reputation_lifecycle() {
     let env = Env::default();
     env.mock_all_auths();
 
     let contract_id = env.register(Reputation, ());
     let client = ReputationClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
 
-    assert!(client.try_initialize(&admin).is_ok());
+    let admin = Address::generate(&env);
+    let reporter = Address::generate(&env);
+    let subject = Address::generate(&env);
+
+    // Initialize
+    client.initialize(&admin);
+
+    // Cannot initialize twice
+    let double_init = client.try_initialize(&admin);
+    assert_eq!(double_init, Err(Ok(Error::AlreadyInitialized)));
+
+    // Unauthorized reporter cannot record event
+    let unauthorized_record = client.try_record_event(
+        &reporter,
+        &subject,
+        &symbol_short!("milestone"),
+        &15,
+        &String::from_str(&env, "milestone-1"),
+    );
+    assert_eq!(unauthorized_record, Err(Ok(Error::Unauthorized)));
+
+    // Add reporter
+    client.add_reporter(&reporter);
+
+    // Record positive event
+    client.record_event(
+        &reporter,
+        &subject,
+        &symbol_short!("milestone"),
+        &15,
+        &String::from_str(&env, "milestone-1"),
+    );
+
+    let evs = env.events().all();
+    assert_eq!(evs.events().len(), 1);
+
+    assert_eq!(client.get_score(&subject), 15);
+    let badges = client.get_badges(&subject);
+    assert_eq!(badges.len(), 1);
+    assert_eq!(badges.get(0).unwrap().name, symbol_short!("Helper"));
+    assert_eq!(badges.get(0).unwrap().tier, 1);
+
+    // Record second event to reach tier 2 (50)
+    client.record_event(
+        &reporter,
+        &subject,
+        &symbol_short!("completed"),
+        &40,
+        &String::from_str(&env, "request-101"),
+    );
+    assert_eq!(client.get_score(&subject), 55);
+    let badges2 = client.get_badges(&subject);
+    assert_eq!(badges2.len(), 2);
+    assert_eq!(badges2.get(1).unwrap().name, symbol_short!("Advocate"));
+
+    // Remove reporter and verify they can no longer record
+    client.remove_reporter(&reporter);
+    let removed_record = client.try_record_event(
+        &reporter,
+        &subject,
+        &symbol_short!("milestone"),
+        &10,
+        &String::from_str(&env, "milestone-2"),
+    );
+    assert_eq!(removed_record, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
-fn initialize_twice_fails() {
+fn test_config_update() {
     let env = Env::default();
     env.mock_all_auths();
 
     let contract_id = env.register(Reputation, ());
     let client = ReputationClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
 
+    let admin = Address::generate(&env);
     client.initialize(&admin);
-    assert!(client.try_initialize(&admin).is_err());
+
+    let current = client.get_config();
+    assert_eq!(current.tier1_threshold, 10);
+
+    client.set_config(&Config {
+        tier1_threshold: 5,
+        tier2_threshold: 25,
+        tier3_threshold: 80,
+    });
+
+    let updated = client.get_config();
+    assert_eq!(updated.tier1_threshold, 5);
+    assert_eq!(updated.tier2_threshold, 25);
+    assert_eq!(updated.tier3_threshold, 80);
 }
