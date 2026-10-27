@@ -366,6 +366,132 @@ impl HelpRequest {
         Ok(())
     }
 
+    /// Submit evidence for a milestone.
+    ///
+    /// Only the creator may call this. Request must be Funded or Releasing.
+    /// Milestones must be submitted sequentially and only once.
+    pub fn submit_milestone(
+        env: Env,
+        request_id: u64,
+        index: u32,
+        evidence_hash: BytesN<32>,
+    ) -> Result<(), Error> {
+        let mut request: Request = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Request(request_id))
+            .ok_or(Error::RequestNotFound)?;
+
+        request.creator.require_auth();
+
+        if request.status != Status::Funded && request.status != Status::Releasing {
+            return Err(Error::NotOpen);
+        }
+
+        if index >= request.milestones.len() {
+            return Err(Error::MilestoneNotFound);
+        }
+
+        // Verify previous milestones are already released.
+        for i in 0..index {
+            let prev = request.milestones.get(i).unwrap();
+            if !prev.released {
+                return Err(Error::MilestoneOutOfOrder);
+            }
+        }
+
+        let mut milestone = request.milestones.get(index).unwrap();
+        if milestone.released {
+            return Err(Error::MilestoneAlreadyReleased);
+        }
+        if milestone.evidence_hash.is_some() {
+            return Err(Error::MilestoneAlreadySubmitted);
+        }
+
+        milestone.evidence_hash = Some(evidence_hash.clone());
+        request.milestones.set(index, milestone);
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Request(request_id), &request);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Request(request_id),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        events::milestone_submitted(&env, request_id, index, evidence_hash);
+
+        Ok(())
+    }
+
+    /// Approve a submitted milestone.
+    ///
+    /// Must be an approver configured in Config. An approver cannot approve twice.
+    pub fn approve_milestone(
+        env: Env,
+        request_id: u64,
+        index: u32,
+        approver: Address,
+    ) -> Result<(), Error> {
+        approver.require_auth();
+
+        let storage = env.storage().instance();
+        let config: Config = storage.get(&DataKey::Config).ok_or(Error::NotInitialized)?;
+
+        if !config.approvers.contains(&approver) {
+            return Err(Error::Unauthorized);
+        }
+
+        let request: Request = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Request(request_id))
+            .ok_or(Error::RequestNotFound)?;
+
+        if request.status != Status::Funded && request.status != Status::Releasing {
+            return Err(Error::NotOpen);
+        }
+
+        if index >= request.milestones.len() {
+            return Err(Error::MilestoneNotFound);
+        }
+
+        let milestone = request.milestones.get(index).unwrap();
+        if milestone.released {
+            return Err(Error::MilestoneAlreadyReleased);
+        }
+        if milestone.evidence_hash.is_none() {
+            return Err(Error::MilestoneNotSubmitted);
+        }
+
+        let approver_key = DataKey::MilestoneApprover(request_id, index, approver.clone());
+        if env.storage().persistent().has(&approver_key) {
+            return Err(Error::MilestoneAlreadyApproved);
+        }
+
+        let count_key = DataKey::MilestoneApprovalCount(request_id, index);
+        let count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0u32);
+
+        env.storage().persistent().set(&approver_key, &true);
+        env.storage().persistent().extend_ttl(
+            &approver_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.storage().persistent().set(&count_key, &(count + 1));
+        env.storage().persistent().extend_ttl(
+            &count_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        events::milestone_approved(&env, request_id, index, approver);
+
+        Ok(())
+    }
+
     /// Withdraw a contribution from a Failed or Cancelled request.
     ///
     /// `contributor` must authorize the call. Checks-effects-interactions: the stored
