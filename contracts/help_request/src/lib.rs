@@ -12,7 +12,7 @@ mod types;
 pub use crate::errors::Error;
 pub use crate::types::{Config, DataKey, Milestone, Request, Status};
 
-use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Vec};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, IntoVal, String, Symbol, Val, Vec};
 use shared::CheckedAmount;
 
 /// Minimum instance-storage TTL kept on reads/writes (~1 day at 5s/ledger).
@@ -24,6 +24,37 @@ const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;
 const PERSISTENT_TTL_THRESHOLD: u32 = 120_960;
 /// Target persistent-storage TTL when extending (~60 days at 5s/ledger).
 const PERSISTENT_TTL_EXTEND_TO: u32 = 1_036_800;
+
+/// Helper to notify the reputation contract of a verified outcome.
+///
+/// Calls `record_event` via `try_invoke_contract`.
+/// ISOLATION GUARANTEE: If the reputation contract reverts, runs out of gas, or
+/// fails for any reason, the error is safely discarded so that fund movements and
+/// request state transitions are never blocked or trapped.
+fn notify_reputation(
+    env: &Env,
+    reputation_contract: &Option<Address>,
+    subject: &Address,
+    kind: Symbol,
+    delta: i32,
+    ref_id: &String,
+) {
+    if let Some(target) = reputation_contract {
+        let caller = env.current_contract_address();
+        let mut args = Vec::new(env);
+        args.push_back(caller.to_val());
+        args.push_back(subject.to_val());
+        args.push_back(kind.to_val());
+        args.push_back(delta.into_val(env));
+        args.push_back(ref_id.to_val());
+        let func = Symbol::new(env, "record_event");
+        let _ = env.try_invoke_contract::<Val, soroban_sdk::InvokeError>(
+            target,
+            &func,
+            args,
+        );
+    }
+}
 
 #[contract]
 pub struct HelpRequest;
@@ -583,6 +614,27 @@ impl HelpRequest {
 
         events::milestone_released(&env, request_id, index, milestone.amount);
 
+        // Reputation notification (isolated, non-blocking)
+        if request.status == Status::Completed {
+            notify_reputation(
+                &env,
+                &config.reputation_contract,
+                &request.creator,
+                Symbol::new(&env, "completed"),
+                10,
+                &String::from_str(&env, "completed"),
+            );
+        } else {
+            notify_reputation(
+                &env,
+                &config.reputation_contract,
+                &request.creator,
+                Symbol::new(&env, "milestone"),
+                5,
+                &String::from_str(&env, "milestone"),
+            );
+        }
+
         Ok(())
     }
 
@@ -717,6 +769,21 @@ impl HelpRequest {
         );
 
         events::refunded(&env, request_id, contributor, refund_amount);
+
+        // Reputation notification (isolated, non-blocking)
+        if request.status == Status::Failed {
+            let storage = env.storage().instance();
+            if let Some(cfg) = storage.get::<_, Config>(&DataKey::Config) {
+                notify_reputation(
+                    &env,
+                    &cfg.reputation_contract,
+                    &request.creator,
+                    Symbol::new(&env, "refund"),
+                    1,
+                    &String::from_str(&env, "refund"),
+                );
+            }
+        }
 
         Ok(())
     }

@@ -1110,3 +1110,80 @@ fn milestone_proportional_refund_exact_conservation() {
     assert_eq!(token_client.balance(&creator) + total_refunded, 1_000_000);
     assert_eq!(token_client.balance(&contract_id), 0);
 }
+
+#[test]
+fn test_reputation_cross_contract_and_isolation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    set_time(&env, 1_000_000);
+
+    let hr_id = env.register(HelpRequest, ());
+    let hr_client = HelpRequestClient::new(&env, &hr_id);
+
+    let rep_id = env.register(reputation::Reputation, ());
+    let rep_client = reputation::ReputationClient::new(&env, &rep_id);
+
+    let admin = Address::generate(&env);
+    let creator = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let approver = Address::generate(&env);
+
+    rep_client.initialize(&admin);
+    rep_client.add_reporter(&hr_id);
+
+    let token_admin = Address::generate(&env);
+    let token = env.register_stellar_asset_contract_v2(token_admin).address();
+
+    let mut cfg = make_config(&env, &token, &approver);
+    cfg.reputation_contract = Some(rep_id.clone());
+    hr_client.initialize(&admin, &cfg);
+
+    mint(&env, &token, &contributor, 100_000);
+
+    // 1. Successful flow notifies reputation
+    let req_id = hr_client.create_request(
+        &creator,
+        &token,
+        &100_000,
+        &2_000_000,
+        &Vec::new(&env),
+        &dummy_hash(&env),
+    );
+    hr_client.contribute(&req_id, &contributor, &100_000);
+
+    hr_client.submit_milestone(&req_id, &0, &dummy_hash(&env));
+    hr_client.approve_milestone(&req_id, &0, &approver);
+
+    // Releasing milestone pays creator and calls reputation.record_event
+    hr_client.release_milestone(&req_id, &0);
+
+    let token_client = token::Client::new(&env, &token);
+    assert_eq!(token_client.balance(&creator), 100_000);
+
+    // Reputation score increased for completed request (+10)
+    assert_eq!(rep_client.get_score(&creator), 10);
+
+    // 2. Failure Isolation: Misconfigured or failing reputation contract CANNOT block release
+    // Remove hr_id from reporters so reputation.record_event would return Error::Unauthorized
+    rep_client.remove_reporter(&hr_id);
+
+    let creator2 = Address::generate(&env);
+    mint(&env, &token, &contributor, 100_000);
+    let req_id2 = hr_client.create_request(
+        &creator2,
+        &token,
+        &100_000,
+        &2_000_000,
+        &Vec::new(&env),
+        &dummy_hash(&env),
+    );
+    hr_client.contribute(&req_id2, &contributor, &100_000);
+    hr_client.submit_milestone(&req_id2, &0, &dummy_hash(&env));
+    hr_client.approve_milestone(&req_id2, &0, &approver);
+
+    // Release must succeed even though reputation call fails
+    hr_client.release_milestone(&req_id2, &0);
+    assert_eq!(token_client.balance(&creator2), 100_000);
+    // Reputation was unauthorized so score remained 0
+    assert_eq!(rep_client.get_score(&creator2), 0);
+}

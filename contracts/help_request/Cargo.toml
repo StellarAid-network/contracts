@@ -16,6 +16,7 @@ shared.workspace = true
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+reputation = { path = "../reputation" }
 
 # ─── docs ────────────────────────────────────────────────────────────────────
 # Core flow implemented: initialize, set_config, create_request, contribute,
