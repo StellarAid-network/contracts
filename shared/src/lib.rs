@@ -7,6 +7,13 @@
 
 use soroban_sdk::Address;
 
+pub mod upgrade;
+pub use upgrade::{
+    cancel_upgrade, execute_upgrade, get_pending_upgrade, get_storage_version,
+    init_storage_version, migrate_storage, propose_upgrade, PendingUpgrade, UpgradeError,
+    UpgradeKey, DEFAULT_TIMELOCK_DELAY, STORAGE_VERSION_V1,
+};
+
 /// A Stellar account (G...) address.
 pub type AccountAddress = Address;
 

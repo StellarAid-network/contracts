@@ -1435,3 +1435,49 @@ fn property_random_action_orderings_and_timestamp_boundaries() {
     }
 }
 
+#[test]
+fn upgrade_timelock_and_storage_migration_scaffolding_works() {
+    let (env, contract_id, _admin, _token, _client) = setup_contract();
+    let new_wasm_hash = BytesN::from_array(&env, &[0xabu8; 32]);
+
+    let pending = env.as_contract(&contract_id, || {
+        assert_eq!(shared::get_storage_version(&env), 1);
+
+        let p = HelpRequest::propose_wasm_upgrade(
+            &env,
+            new_wasm_hash.clone(),
+            shared::DEFAULT_TIMELOCK_DELAY,
+        )
+        .unwrap();
+        assert_eq!(
+            p.executable_after,
+            1_000_000 + shared::DEFAULT_TIMELOCK_DELAY
+        );
+        p
+    });
+
+    // Before timelock expires -> DeadlineNotReached
+    set_time(&env, pending.executable_after - 1);
+    env.as_contract(&contract_id, || {
+        assert_eq!(
+            HelpRequest::execute_wasm_upgrade(&env, false),
+            Err(Error::DeadlineNotReached)
+        );
+    });
+
+    // At timelock expiration -> succeeds
+    set_time(&env, pending.executable_after);
+    env.as_contract(&contract_id, || {
+        let executed_hash = HelpRequest::execute_wasm_upgrade(&env, false).unwrap();
+        assert_eq!(executed_hash, new_wasm_hash);
+    });
+
+    // Explicit storage migration v1 -> v2
+    env.as_contract(&contract_id, || {
+        let migrated_version = HelpRequest::migrate_version(&env, 1, 2).unwrap();
+        assert_eq!(migrated_version, 2);
+        assert_eq!(shared::get_storage_version(&env), 2);
+    });
+}
+
+

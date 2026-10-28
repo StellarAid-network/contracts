@@ -79,6 +79,7 @@ impl HelpRequest {
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::Config, &config);
         storage.set(&DataKey::NextRequestId, &0u64);
+        shared::init_storage_version(&env, shared::STORAGE_VERSION_V1);
         storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         Ok(())
@@ -868,6 +869,44 @@ impl HelpRequest {
         }
 
         amount
+    }
+}
+
+impl HelpRequest {
+    /// Propose a time-locked WASM upgrade gated by the contract admin (intended for multisig).
+    pub fn propose_wasm_upgrade(
+        env: &Env,
+        wasm_hash: BytesN<32>,
+        timelock_delay: u64,
+    ) -> Result<shared::PendingUpgrade, Error> {
+        let storage = env.storage().instance();
+        let admin: Address = storage.get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
+        let pending = shared::propose_upgrade(env, &admin, wasm_hash, timelock_delay)
+            .map_err(|_| Error::InvalidAmount)?;
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+        Ok(pending)
+    }
+
+    /// Execute a previously proposed WASM upgrade after the time-lock has elapsed.
+    pub fn execute_wasm_upgrade(env: &Env, apply_wasm: bool) -> Result<BytesN<32>, Error> {
+        let storage = env.storage().instance();
+        let admin: Address = storage.get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
+        let hash = shared::execute_upgrade(env, &admin, apply_wasm).map_err(|e| match e {
+            shared::UpgradeError::TimelockNotExpired => Error::DeadlineNotReached,
+            _ => Error::Unauthorized,
+        })?;
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+        Ok(hash)
+    }
+
+    /// Explicit versioned storage migration scaffolding (`from_version -> to_version`).
+    pub fn migrate_version(env: &Env, from_version: u32, to_version: u32) -> Result<u32, Error> {
+        let storage = env.storage().instance();
+        let admin: Address = storage.get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
+        let v = shared::migrate_storage(env, &admin, from_version, to_version, |_e| {})
+            .map_err(|_| Error::Unauthorized)?;
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+        Ok(v)
     }
 }
 
