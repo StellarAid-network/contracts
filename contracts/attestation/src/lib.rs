@@ -157,9 +157,10 @@ impl AttestationContract {
             .unwrap_or_else(|| Vec::new(&env));
         subject_list.push_back(next_id);
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::SubjectAttestations(subject.clone()), &subject_list);
+        env.storage().persistent().set(
+            &DataKey::SubjectAttestations(subject.clone()),
+            &subject_list,
+        );
         env.storage().persistent().extend_ttl(
             &DataKey::SubjectAttestations(subject.clone()),
             PERSISTENT_TTL_THRESHOLD,

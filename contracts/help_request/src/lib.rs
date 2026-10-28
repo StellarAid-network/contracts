@@ -12,8 +12,10 @@ mod types;
 pub use crate::errors::Error;
 pub use crate::types::{Config, DataKey, Milestone, Request, Status};
 
-use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, IntoVal, String, Symbol, Val, Vec};
 use shared::CheckedAmount;
+use soroban_sdk::{
+    contract, contractimpl, token, Address, BytesN, Env, IntoVal, String, Symbol, Val, Vec,
+};
 
 /// Minimum instance-storage TTL kept on reads/writes (~1 day at 5s/ledger).
 const INSTANCE_TTL_THRESHOLD: u32 = 17_280;
@@ -48,11 +50,7 @@ fn notify_reputation(
         args.push_back(delta.into_val(env));
         args.push_back(ref_id.to_val());
         let func = Symbol::new(env, "record_event");
-        let _ = env.try_invoke_contract::<Val, soroban_sdk::InvokeError>(
-            target,
-            &func,
-            args,
-        );
+        let _ = env.try_invoke_contract::<Val, soroban_sdk::InvokeError>(target, &func, args);
     }
 }
 
@@ -164,7 +162,9 @@ impl HelpRequest {
                 if m.amount <= 0 || m.released || m.evidence_hash.is_some() {
                     return Err(Error::InvalidMilestoneSchedule);
                 }
-                sum = sum.checked_add_amount(m.amount).ok_or(Error::InvalidAmount)?;
+                sum = sum
+                    .checked_add_amount(m.amount)
+                    .ok_or(Error::InvalidAmount)?;
             }
             if sum != goal {
                 return Err(Error::InvalidMilestoneSchedule);
@@ -289,11 +289,7 @@ impl HelpRequest {
 
         // --- INTERACTIONS (token transfer after state is committed) ---
         let contract_address = env.current_contract_address();
-        token::Client::new(&env, &request.token).transfer(
-            &contributor,
-            &contract_address,
-            &amount,
-        );
+        token::Client::new(&env, &request.token).transfer(&contributor, &contract_address, &amount);
 
         // Emit events.
         events::contributed(&env, request_id, contributor, amount, new_raised);
@@ -546,11 +542,7 @@ impl HelpRequest {
     /// Anyone may call this once sufficient approvals exist.
     /// Checks-effects-interactions: updates contract state and milestone status
     /// before executing the token transfer.
-    pub fn release_milestone(
-        env: Env,
-        request_id: u64,
-        index: u32,
-    ) -> Result<(), Error> {
+    pub fn release_milestone(env: Env, request_id: u64, index: u32) -> Result<(), Error> {
         let storage = env.storage().instance();
         let config: Config = storage.get(&DataKey::Config).ok_or(Error::NotInitialized)?;
         storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
@@ -771,7 +763,9 @@ impl HelpRequest {
         let refund_amount = if request.total_released == 0 || request.status == Status::Failed {
             amount
         } else {
-            let prod = amount.checked_mul(remaining_unreleased).ok_or(Error::InvalidAmount)?;
+            let prod = amount
+                .checked_mul(remaining_unreleased)
+                .ok_or(Error::InvalidAmount)?;
             prod / request.raised
         };
 
@@ -780,9 +774,7 @@ impl HelpRequest {
         }
 
         // --- EFFECTS (zero out before interaction) ---
-        env.storage()
-            .persistent()
-            .set(&contribution_key, &0i128);
+        env.storage().persistent().set(&contribution_key, &0i128);
         env.storage().persistent().extend_ttl(
             &contribution_key,
             PERSISTENT_TTL_THRESHOLD,

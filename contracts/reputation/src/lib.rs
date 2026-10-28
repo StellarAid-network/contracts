@@ -187,11 +187,7 @@ impl Reputation {
     /// Read earned badges for a subject based on current score and configured thresholds.
     pub fn get_badges(env: Env, subject: Address) -> Vec<Badge> {
         let mut badges = Vec::new(&env);
-        let config = match env
-            .storage()
-            .instance()
-            .get::<_, Config>(&DataKey::Config)
-        {
+        let config = match env.storage().instance().get::<_, Config>(&DataKey::Config) {
             Some(c) => c,
             None => return badges,
         };

@@ -15,3 +15,28 @@ jobs:
 
   test:
     uses: StellarAid-network/.github/.github/workflows/test-rust.yml@main
+
+  coverage-and-wasm-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Run coverage report
+        run: cargo llvm-cov --workspace --summary-only
+      - name: Build and verify WASM size limits (< 64 KiB per contract)
+        run: |
+          cargo build --workspace --target wasm32v1-none --release
+          for wasm in target/wasm32v1-none/release/*.wasm; do
+            size=$(wc -c < "$wasm")
+            echo "$wasm: ${size} bytes"
+            if [ "$size" -gt 65536 ]; then
+              echo "Error: $wasm exceeds 64 KiB limit (${size} bytes)"
+              exit 1
+            fi
+          done
