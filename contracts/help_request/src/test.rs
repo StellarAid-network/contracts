@@ -1187,3 +1187,251 @@ fn test_reputation_cross_contract_and_isolation() {
     // Reputation was unauthorized so score remained 0
     assert_eq!(rep_client.get_score(&creator2), 0);
 }
+
+// ---------------------------------------------------------------------------
+// Day 5: Property-style / randomized conservation and boundary tests
+// ---------------------------------------------------------------------------
+
+/// Simple deterministic xorshift64 PRNG for repeatable property-style testing.
+struct SimpleRng(u64);
+
+impl SimpleRng {
+    fn new(seed: u64) -> Self {
+        Self(if seed == 0 { 0xdead_beef_cafe_babe } else { seed })
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.0 = x;
+        x
+    }
+
+    fn range_i128(&mut self, min: i128, max: i128) -> i128 {
+        let span = (max - min + 1) as u64;
+        min + (self.next_u64() % span) as i128
+    }
+}
+
+#[test]
+fn property_fund_conservation_many_contributors_and_partial_releases() {
+    for seed in 1u64..=8 {
+        let mut rng = SimpleRng::new(seed * 997);
+        let env = Env::default();
+        env.mock_all_auths();
+        set_time(&env, 1_000_000);
+
+        let contract_id = env.register(HelpRequest, ());
+        let client = HelpRequestClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let creator = Address::generate(&env);
+        let approver = Address::generate(&env);
+        let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
+        let token_client = token::Client::new(&env, &token);
+
+        let config = make_config(&env, &token, &approver);
+        client.initialize(&admin, &config);
+
+        // Build 3 milestones with randomized amounts
+        let m0 = rng.range_i128(10_000, 250_000);
+        let m1 = rng.range_i128(10_000, 250_000);
+        let m2 = rng.range_i128(10_000, 250_000);
+        let goal = m0 + m1 + m2;
+
+        let mut milestones = Vec::new(&env);
+        milestones.push_back(Milestone {
+            index: 0,
+            amount: m0,
+            evidence_hash: None,
+            released: false,
+        });
+        milestones.push_back(Milestone {
+            index: 1,
+            amount: m1,
+            evidence_hash: None,
+            released: false,
+        });
+        milestones.push_back(Milestone {
+            index: 2,
+            amount: m2,
+            evidence_hash: None,
+            released: false,
+        });
+
+        let deadline = 2_000_000u64;
+        let req_id = client.create_request(
+            &creator,
+            &token,
+            &goal,
+            &deadline,
+            &milestones,
+            &dummy_hash(&env),
+        );
+
+        // Generate 15 contributors with random amounts until funded
+        let num_contributors = 15usize;
+        let mut contributors = soroban_sdk::Vec::new(&env);
+        let mut total_contributed: i128 = 0;
+
+        for i in 0..num_contributors {
+            let c = Address::generate(&env);
+            let remaining_to_goal = goal - total_contributed;
+            if remaining_to_goal <= 0 {
+                break;
+            }
+            let amt = if i == num_contributors - 1 {
+                remaining_to_goal + rng.range_i128(0, 5_000)
+            } else {
+                let max_step = (goal / 8).max(500);
+                rng.range_i128(100, max_step).min(remaining_to_goal)
+            };
+
+            mint(&env, &token, &c, amt);
+            client.contribute(&req_id, &c, &amt);
+            total_contributed += amt;
+            contributors.push_back(c);
+
+            if total_contributed >= goal {
+                break;
+            }
+        }
+
+        // Ensure funded
+        if total_contributed < goal {
+            let topup_c = Address::generate(&env);
+            let diff = goal - total_contributed;
+            mint(&env, &token, &topup_c, diff);
+            client.contribute(&req_id, &topup_c, &diff);
+            total_contributed += diff;
+            contributors.push_back(topup_c);
+        }
+
+        assert_eq!(token_client.balance(&contract_id), total_contributed);
+
+        // Release 0, 1, or 2 milestones before disputing the next one
+        let milestones_to_release = (seed % 3) as u32;
+        let mut expected_released: i128 = 0;
+        for m_idx in 0..milestones_to_release {
+            client.submit_milestone(&req_id, &m_idx, &dummy_hash(&env));
+            client.approve_milestone(&req_id, &m_idx, &approver);
+            client.release_milestone(&req_id, &m_idx);
+            let m_amt = match m_idx {
+                0 => m0,
+                1 => m1,
+                _ => m2,
+            };
+            expected_released += m_amt;
+        }
+
+        assert_eq!(token_client.balance(&creator), expected_released);
+
+        // Dispute the next unreleased milestone
+        client.dispute_milestone(&req_id, &milestones_to_release, &approver);
+
+        // Refund all contributors in pseudo-random order
+        let len = contributors.len();
+        let offset = (rng.next_u64() as u32) % len;
+        let mut total_refunded: i128 = 0;
+        for step in 0..len {
+            let idx = (step + offset) % len;
+            let c = contributors.get(idx).unwrap();
+            client.refund(&req_id, &c);
+            // Second refund attempt must always fail with NothingToRefund
+            assert_eq!(
+                client.try_refund(&req_id, &c),
+                Err(Ok(Error::NothingToRefund))
+            );
+            total_refunded += token_client.balance(&c);
+        }
+
+        let remaining_in_contract = token_client.balance(&contract_id);
+        let creator_received = token_client.balance(&creator);
+
+        // Exact conservation invariant:
+        // total_contributed == creator_received + total_refunded + remaining_in_contract
+        assert_eq!(
+            total_contributed,
+            creator_received + total_refunded + remaining_in_contract
+        );
+        // Floor division guarantees no over-distribution and dust < number of contributors
+        assert!(remaining_in_contract >= 0);
+        assert!(remaining_in_contract < len as i128);
+    }
+}
+
+#[test]
+fn property_random_action_orderings_and_timestamp_boundaries() {
+    for seed in 1u64..=6 {
+        let mut rng = SimpleRng::new(seed * 4099);
+        let (env, contract_id, _admin, token, client) = setup_contract();
+        let token_client = token::Client::new(&env, &token);
+
+        let creator = Address::generate(&env);
+        let deadline = 1_000_000u64 + (rng.next_u64() % 500_000 + 1_000);
+        let goal = rng.range_i128(50_000, 500_000);
+
+        let req_id = client.create_request(
+            &creator,
+            &token,
+            &goal,
+            &deadline,
+            &Vec::new(&env),
+            &dummy_hash(&env),
+        );
+
+        let mut contributors = Vec::new(&env);
+        let mut expected_total: i128 = 0;
+
+        // Contribute at deadline - 1 (last valid second)
+        set_time(&env, deadline - 1);
+        for _ in 0..5 {
+            let c = Address::generate(&env);
+            let amt = rng.range_i128(100, (goal / 10).max(200));
+            mint(&env, &token, &c, amt);
+            client.contribute(&req_id, &c, &amt);
+            expected_total += amt;
+            contributors.push_back(c);
+        }
+
+        // Finalize at deadline - 1 must fail with DeadlineNotReached
+        assert_eq!(
+            client.try_finalize(&req_id),
+            Err(Ok(Error::DeadlineNotReached))
+        );
+
+        if seed % 2 == 0 {
+            // Path A: Creator cancels at deadline - 1, then finalize at deadline must fail
+            client.cancel(&req_id);
+            set_time(&env, deadline);
+            assert_eq!(client.try_finalize(&req_id), Err(Ok(Error::NotOpen)));
+        } else {
+            // Path B: Advance to exact deadline, contribution must fail, finalize moves to Failed
+            set_time(&env, deadline);
+            let late_c = Address::generate(&env);
+            mint(&env, &token, &late_c, 1_000);
+            assert_eq!(
+                client.try_contribute(&req_id, &late_c, &1_000),
+                Err(Ok(Error::DeadlinePassed))
+            );
+            client.finalize(&req_id);
+            assert_eq!(client.get_request(&req_id).status, Status::Failed);
+            // Cancel after Failed must fail
+            assert_eq!(client.try_cancel(&req_id), Err(Ok(Error::NotOpen)));
+        }
+
+        // Refund all contributors at deadline + 1
+        set_time(&env, deadline + 1);
+        let mut refunded_sum: i128 = 0;
+        for i in 0..contributors.len() {
+            let c = contributors.get(i).unwrap();
+            client.refund(&req_id, &c);
+            refunded_sum += token_client.balance(&c);
+        }
+
+        assert_eq!(refunded_sum, expected_total);
+        assert_eq!(token_client.balance(&contract_id), 0);
+    }
+}
+
