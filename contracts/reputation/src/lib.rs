@@ -68,7 +68,9 @@ impl Reputation {
     /// Read badge threshold config.
     pub fn get_config(env: Env) -> Result<Config, Error> {
         let storage = env.storage().instance();
-        storage.get(&DataKey::Config).ok_or(Error::NotInitialized)
+        let cfg: Config = storage.get(&DataKey::Config).ok_or(Error::NotInitialized)?;
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+        Ok(cfg)
     }
 
     /// Add an authorized reporter contract. Admin-only.
@@ -76,6 +78,7 @@ impl Reputation {
         let storage = env.storage().instance();
         let admin: Address = storage.get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
         admin.require_auth();
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         env.storage()
             .persistent()
@@ -94,6 +97,7 @@ impl Reputation {
         let storage = env.storage().instance();
         let admin: Address = storage.get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
         admin.require_auth();
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         env.storage()
             .persistent()
@@ -114,10 +118,15 @@ impl Reputation {
     ) -> Result<(), Error> {
         reporter.require_auth();
 
-        env.storage()
-            .instance()
+        let storage = env.storage().instance();
+        storage
             .get::<_, Address>(&DataKey::Admin)
             .ok_or(Error::NotInitialized)?;
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        if delta == 0 {
+            return Err(Error::InvalidDelta);
+        }
 
         let is_reporter: bool = env
             .storage()
@@ -129,13 +138,21 @@ impl Reputation {
             return Err(Error::Unauthorized);
         }
 
+        env.storage().persistent().extend_ttl(
+            &DataKey::Reporter(reporter),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
         let current_score: i64 = env
             .storage()
             .persistent()
             .get(&DataKey::Score(subject.clone()))
             .unwrap_or(0i64);
 
-        let new_score = current_score.saturating_add(delta as i64);
+        let new_score = current_score
+            .checked_add(delta as i64)
+            .ok_or(Error::InvalidDelta)?;
 
         env.storage()
             .persistent()
@@ -153,10 +170,18 @@ impl Reputation {
 
     /// Read current reputation score for a subject. Defaults to 0 if none recorded.
     pub fn get_score(env: Env, subject: Address) -> i64 {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Score(subject))
-            .unwrap_or(0i64)
+        let key = DataKey::Score(subject);
+        let score: Option<i64> = env.storage().persistent().get(&key);
+        if let Some(s) = score {
+            env.storage().persistent().extend_ttl(
+                &key,
+                PERSISTENT_TTL_THRESHOLD,
+                PERSISTENT_TTL_EXTEND_TO,
+            );
+            s
+        } else {
+            0i64
+        }
     }
 
     /// Read earned badges for a subject based on current score and configured thresholds.

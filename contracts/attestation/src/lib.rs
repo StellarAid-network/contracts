@@ -46,6 +46,7 @@ impl AttestationContract {
         let storage = env.storage().instance();
         let admin: Address = storage.get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
         admin.require_auth();
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         env.storage()
             .persistent()
@@ -73,6 +74,7 @@ impl AttestationContract {
         let storage = env.storage().instance();
         let admin: Address = storage.get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
         admin.require_auth();
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         env.storage()
             .persistent()
@@ -110,6 +112,12 @@ impl AttestationContract {
             return Err(Error::Unauthorized);
         }
 
+        env.storage().persistent().extend_ttl(
+            &DataKey::Attestor(attestor.clone()),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
         let now = env.ledger().timestamp();
         if let Some(exp) = expires_at {
             if exp <= now {
@@ -118,7 +126,8 @@ impl AttestationContract {
         }
 
         let next_id: u64 = storage.get(&DataKey::NextId).unwrap_or(1u64);
-        storage.set(&DataKey::NextId, &(next_id + 1));
+        let incremented_id = next_id.checked_add(1).ok_or(Error::InvalidExpiry)?;
+        storage.set(&DataKey::NextId, &incremented_id);
         storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         let attestation = Attestation {
@@ -166,10 +175,11 @@ impl AttestationContract {
     pub fn revoke(env: Env, attestor: Address, attestation_id: u64) -> Result<(), Error> {
         attestor.require_auth();
 
-        env.storage()
-            .instance()
+        let storage = env.storage().instance();
+        storage
             .get::<_, Address>(&DataKey::Admin)
             .ok_or(Error::NotInitialized)?;
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         let mut attestation: Attestation = env
             .storage()

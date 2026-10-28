@@ -159,4 +159,14 @@ fn test_negative_deltas_and_badge_boundaries() {
     );
     assert_eq!(client.get_score(&subject), 8);
     assert_eq!(client.get_badges(&subject).len(), 0);
+
+    // Zero delta is rejected with InvalidDelta
+    let zero_delta = client.try_record_event(
+        &reporter,
+        &subject,
+        &symbol_short!("noop"),
+        &0,
+        &String::from_str(&env, "ref-zero"),
+    );
+    assert_eq!(zero_delta, Err(Ok(Error::InvalidDelta)));
 }

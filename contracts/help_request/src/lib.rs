@@ -173,7 +173,8 @@ impl HelpRequest {
 
         // Assign request id.
         let id: u64 = storage.get(&DataKey::NextRequestId).unwrap_or(0u64);
-        storage.set(&DataKey::NextRequestId, &(id + 1));
+        let next_id = id.checked_add(1).ok_or(Error::InvalidAmount)?;
+        storage.set(&DataKey::NextRequestId, &next_id);
         storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         let request = Request {
@@ -407,6 +408,15 @@ impl HelpRequest {
         index: u32,
         evidence_hash: BytesN<32>,
     ) -> Result<(), Error> {
+        env.storage()
+            .instance()
+            .has(&DataKey::Admin)
+            .then_some(())
+            .ok_or(Error::NotInitialized)?;
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
         let mut request: Request = env
             .storage()
             .persistent()
@@ -469,6 +479,7 @@ impl HelpRequest {
 
         let storage = env.storage().instance();
         let config: Config = storage.get(&DataKey::Config).ok_or(Error::NotInitialized)?;
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         if !config.approvers.contains(&approver) {
             return Err(Error::Unauthorized);
@@ -479,6 +490,11 @@ impl HelpRequest {
             .persistent()
             .get(&DataKey::Request(request_id))
             .ok_or(Error::RequestNotFound)?;
+        env.storage().persistent().extend_ttl(
+            &DataKey::Request(request_id),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
 
         if request.status != Status::Funded && request.status != Status::Releasing {
             return Err(Error::NotOpen);
@@ -503,6 +519,7 @@ impl HelpRequest {
 
         let count_key = DataKey::MilestoneApprovalCount(request_id, index);
         let count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0u32);
+        let next_count = count.checked_add(1).ok_or(Error::InvalidAmount)?;
 
         env.storage().persistent().set(&approver_key, &true);
         env.storage().persistent().extend_ttl(
@@ -511,7 +528,7 @@ impl HelpRequest {
             PERSISTENT_TTL_EXTEND_TO,
         );
 
-        env.storage().persistent().set(&count_key, &(count + 1));
+        env.storage().persistent().set(&count_key, &next_count);
         env.storage().persistent().extend_ttl(
             &count_key,
             PERSISTENT_TTL_THRESHOLD,
@@ -535,6 +552,7 @@ impl HelpRequest {
     ) -> Result<(), Error> {
         let storage = env.storage().instance();
         let config: Config = storage.get(&DataKey::Config).ok_or(Error::NotInitialized)?;
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         let mut request: Request = env
             .storage()
@@ -652,6 +670,7 @@ impl HelpRequest {
 
         let storage = env.storage().instance();
         let config: Config = storage.get(&DataKey::Config).ok_or(Error::NotInitialized)?;
+        storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
         if !config.approvers.contains(&approver) {
             return Err(Error::Unauthorized);
@@ -730,10 +749,19 @@ impl HelpRequest {
             return Err(Error::NothingToRefund);
         }
 
-        let remaining_unreleased = request.raised - request.total_released;
+        let remaining_unreleased = request
+            .raised
+            .checked_sub(request.total_released)
+            .ok_or(Error::InvalidAmount)?;
         if remaining_unreleased <= 0 {
             return Err(Error::NothingToRefund);
         }
+
+        env.storage().persistent().extend_ttl(
+            &DataKey::Request(request_id),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
 
         // Proportional refund calculation:
         // If no milestones released or Failed, full 100% refund of contributed amount.
