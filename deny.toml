@@ -2,7 +2,10 @@
 
 [advisories]
 version = 2
-ignore = []
+ignore = [
+  "RUSTSEC-2026-0387", # crypto-bigint: timing variability in transitive dependency of soroban-sdk host
+  "RUSTSEC-2024-0436", # paste: unmaintained advisory in transitive dependency of soroban-sdk host
+]
 
 [licenses]
 version = 2
