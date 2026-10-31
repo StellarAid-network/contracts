@@ -1,5 +1,8 @@
 use soroban_sdk::contracterror;
 
+/// Errors returned by the Reputation contract.
+///
+/// Numeric codes are stable public ABI; append new codes without renumbering.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]

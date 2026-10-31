@@ -5,7 +5,7 @@
 ![Rust](https://img.shields.io/badge/rust-stable-orange)
 ![Soroban](https://img.shields.io/badge/soroban-smart%20contracts-7B61FF)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-in%20development-yellow)
+![Status](https://img.shields.io/badge/status-v0.1.0--testnet-orange)
 
 This repository is the **source of truth for on-chain rules** in the StellarAid ecosystem. Every release here produces WASM binaries and TypeScript bindings that are published through the [`sdk`](https://github.com/stellar-aid/sdk) repo.
 
@@ -53,9 +53,9 @@ Contracts are kept small and single-purpose to reduce audit surface and cost.
 
 | Contract | Crate | Purpose | Status |
 |---|---|---|---|
-| Help Request | `contracts/help_request` | Funding-goal escrow with deadline, refunds, and milestone release | 🚧 |
-| Reputation | `contracts/reputation` | Records scored events and badges per address | 📋 |
-| Attestation | `contracts/attestation` | Lets approved attestors vouch for a request or user | 📋 |
+| Help Request | `contracts/help_request` | Funding-goal escrow with deadline, refunds, and milestone release | ✅ Testnet |
+| Reputation | `contracts/reputation` | Records scored events and badges per address | ✅ Testnet |
+| Attestation | `contracts/attestation` | Lets approved attestors vouch for a request or user | ✅ Testnet |
 
 ### Help Request (summary)
 
@@ -223,7 +223,7 @@ Then it initializes the contract (admin, allowed tokens, fee config, reputation 
 ### 3. Verify
 
 ```bash
-stellar contract invoke --id help_request --source deployer --network testnet -- get_config
+stellar contract invoke --id reputation --source deployer --network testnet -- get_config
 ```
 
 ### Mainnet checklist
@@ -240,7 +240,7 @@ stellar contract invoke --id help_request --source deployer --network testnet --
 
 ## Contract reference
 
-> The signatures below describe the intended interface. The generated docs (`cargo doc --open`) and `src/lib.rs` are authoritative.
+> The signatures below describe the implemented interface. See [`docs/ABI.md`](./docs/ABI.md), the generated docs (`cargo doc --open`), and `src/lib.rs` for full type and ABI specifications.
 
 ### `help_request`
 
@@ -251,9 +251,10 @@ stellar contract invoke --id help_request --source deployer --network testnet --
 | `contribute(request_id, contributor, amount)` | contributor | Transfer tokens into escrow |
 | `finalize(request_id)` | anyone | After the deadline, moves the request to `Funded` or `Failed` |
 | `submit_milestone(request_id, index, evidence_hash)` | creator | Submit proof for a milestone |
-| `approve_milestone(request_id, index)` | approver | Approve a milestone |
+| `approve_milestone(request_id, index, approver)` | approver | Approve a milestone |
 | `release_milestone(request_id, index)` | anyone | Pay the milestone amount once enough approvals exist |
-| `refund(request_id, contributor)` | contributor | Withdraw contribution if failed or cancelled |
+| `dispute_milestone(request_id, index, approver)` | approver | Dispute an unreleased milestone, enabling proportional refunds |
+| `refund(request_id, contributor)` | contributor | Withdraw full or proportional contribution if failed, cancelled, or disputed |
 | `cancel(request_id)` | creator | Cancel before funded, enabling refunds |
 | `get_request(request_id) -> Request` | none | Read request state |
 | `get_contribution(request_id, contributor) -> i128` | none | Read a contributor's total |
@@ -264,8 +265,9 @@ stellar contract invoke --id help_request --source deployer --network testnet --
 | Function | Auth | Description |
 |---|---|---|
 | `initialize(admin)` | admin | One-time setup |
-| `add_reporter(address)` / `remove_reporter(address)` | admin | Manage contracts allowed to record events |
-| `record_event(subject, kind, delta, ref_id)` | reporter | Apply a score change tied to a reference |
+| `set_config(config)` / `get_config() -> Config` | admin / none | Update or read badge score thresholds |
+| `add_reporter(reporter)` / `remove_reporter(reporter)` | admin | Manage contracts allowed to record events |
+| `record_event(reporter, subject, kind, delta, ref_id)` | reporter | Apply a score change tied to a reference |
 | `get_score(subject) -> i64` | none | Current score |
 | `get_badges(subject) -> Vec<Badge>` | none | Earned badges |
 
@@ -273,10 +275,11 @@ stellar contract invoke --id help_request --source deployer --network testnet --
 
 | Function | Auth | Description |
 |---|---|---|
-| `add_attestor(address, meta_hash)` / `remove_attestor(address)` | admin | Manage attestors |
-| `attest(attestor, subject, kind, content_hash, expires_at)` | attestor | Create an attestation |
+| `initialize(admin)` | admin | One-time setup |
+| `add_attestor(attestor, meta_hash)` / `remove_attestor(attestor)` | admin | Manage attestors |
+| `attest(attestor, subject, kind, content_hash, expires_at) -> u64` | attestor | Create an attestation with optional expiry |
 | `revoke(attestor, attestation_id)` | attestor | Revoke an attestation |
-| `get_attestations(subject) -> Vec<Attestation>` | none | Read attestations |
+| `get_attestations(subject) -> Vec<Attestation>` | none | Read active, non-expired, non-revoked attestations |
 
 ---
 
@@ -301,22 +304,31 @@ Contracts emit events that the `api` indexer consumes. Treat event shapes as **p
 
 ## Errors
 
-Each contract defines a `#[contracterror]` enum with stable numeric codes. Example for `help_request`:
+Each contract defines a `#[contracterror]` enum with stable numeric codes (`#[repr(u32)]`). Full tables for all three contracts live in [`docs/ABI.md`](./docs/ABI.md). Codes for `help_request`:
 
 | Code | Name | Meaning |
 |---|---|---|
 | 1 | `NotInitialized` | Contract has not been initialized |
 | 2 | `AlreadyInitialized` | Initialization attempted twice |
 | 3 | `RequestNotFound` | Unknown request id |
-| 4 | `InvalidAmount` | Amount is zero or negative |
+| 4 | `InvalidAmount` | Amount is zero, negative, below minimum, or overflows |
 | 5 | `DeadlinePassed` | Action not allowed after the deadline |
 | 6 | `DeadlineNotReached` | Finalize attempted too early |
-| 7 | `NotOpen` | Request is not accepting contributions |
+| 7 | `NotOpen` | Request status does not permit this action |
 | 8 | `Unauthorized` | Caller lacks permission |
 | 9 | `TokenNotAllowed` | Token is not on the allowed list |
 | 10 | `NothingToRefund` | No refundable balance |
+| 11 | `MilestoneNotFound` | Milestone index out of bounds |
+| 12 | `MilestoneAlreadyReleased` | Milestone already released |
+| 13 | `MilestoneNotSubmitted` | Milestone evidence not yet submitted |
+| 14 | `MilestoneAlreadySubmitted` | Milestone evidence already submitted |
+| 15 | `MilestoneAlreadyApproved` | Caller has already approved this milestone |
+| 16 | `InsufficientApprovals` | Milestone has not reached required approval threshold |
+| 17 | `InvalidMilestoneSchedule` | Milestone schedule amounts do not sum to goal or invalid count |
+| 18 | `MilestoneOutOfOrder` | Milestones must be submitted and released in sequential order |
+| 19 | `NotDisputedOrCancelled` | Request is not in a disputed or refundable state |
 
-*(Numbers are illustrative. Do not renumber codes once released.)*
+*(Do not renumber codes once released; append new variants only.)*
 
 ---
 

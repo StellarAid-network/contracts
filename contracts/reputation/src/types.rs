@@ -16,8 +16,11 @@ pub struct Badge {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Config {
+    /// Minimum score required for Tier 1 (`Helper`).
     pub tier1_threshold: i64,
+    /// Minimum score required for Tier 2 (`Advocate`).
     pub tier2_threshold: i64,
+    /// Minimum score required for Tier 3 (`Champion`).
     pub tier3_threshold: i64,
 }
 

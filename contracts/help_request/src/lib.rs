@@ -2,8 +2,8 @@
 
 //! StellarAid Help Request contract.
 //!
-//! Funding-goal escrow with a deadline, refunds, and milestone release.
-//! This module implements the core flow (no milestones yet).
+//! Non-custodial funding-goal escrow with deadlines, sequential milestone payouts,
+//! approver disputes, proportional refunds, and isolated reputation notifications.
 
 mod errors;
 pub mod events;
@@ -54,6 +54,7 @@ fn notify_reputation(
     }
 }
 
+/// Soroban smart contract managing help-request escrow, milestones, and contributor refunds.
 #[contract]
 pub struct HelpRequest;
 

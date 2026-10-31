@@ -1,0 +1,46 @@
+name: deploy-testnet
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-testnet
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.STELLAR_DEPLOYER_SECRET != '' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --no-default-features --features opt
+
+      - name: Configure deployer identity
+        env:
+          STELLAR_DEPLOYER_SECRET: ${{ secrets.STELLAR_DEPLOYER_SECRET }}
+        run: echo "$STELLAR_DEPLOYER_SECRET" | stellar keys add deployer --secret-key
+
+      - name: Deploy contracts to testnet
+        run: ./scripts/deploy.sh testnet
+
+      - name: Commit updated deployments/testnet.json
+        run: |
+          if [ -n "$(git status --porcelain deployments/testnet.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add deployments/testnet.json
+            git commit -m "chore(deployments): update testnet contract addresses [skip ci]"
+            git push
+          fi

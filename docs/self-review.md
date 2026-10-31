@@ -39,12 +39,21 @@ Every public entrypoint across all three contracts was audited against five core
 
 ---
 
-## 3. Findings & Resolutions
+## 3. Findings & Resolutions (All Closed & Verified — Day 6 Final Sign-off)
 
-| ID | Severity | Location | Finding Description | Resolution |
-|---|---|---|---|---|
-| **SR-01** | Low | `help_request::refund` | `request.raised - request.total_released` used unchecked subtraction instead of `checked_sub`, and did not extend the `Request` persistent entry TTL during refund waves. | Replaced with `request.raised.checked_sub(request.total_released).ok_or(Error::InvalidAmount)?` and added `extend_ttl` on `DataKey::Request(request_id)`. |
-| **SR-02** | Low | `help_request::submit_milestone`, `approve_milestone`, `release_milestone`, `dispute_milestone` | Instance storage TTL was not extended during milestone phase operations (`submit`, `approve`, `release`, `dispute`), which could allow instance config TTL to lag during long milestone delivery schedules. | Added `storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO)` to all four milestone functions and extended `Request` TTL in `approve_milestone`. |
-| **SR-03** | Low | `help_request::create_request`, `approve_milestone` & `attestation::attest` | Counter increments (`id + 1`, `count + 1`, `next_id + 1`) used standard `+` operator instead of `checked_add(1)`. | Replaced all counter increments with `.checked_add(1)` returning a typed contract error on overflow. |
-| **SR-04** | Low | `reputation::record_event` | `Error::InvalidDelta` (code 4) was defined in `reputation/src/errors.rs` but `record_event` accepted `delta == 0` and used `saturating_add` instead of `checked_add`. | Added explicit `if delta == 0 { return Err(Error::InvalidDelta); }` validation, replaced `saturating_add` with `checked_add(delta as i64).ok_or(Error::InvalidDelta)?`, and extended TTLs on `Instance`, `Reporter`, and `Score`. |
-| **SR-05** | Informational | `help_request` Admin Custody Check | Verified that `Admin` only controls `Config` (`allowed_tokens`, `min_contribution`, `approvers`, `approval_threshold`, `reputation_contract`) and cannot withdraw, redirect, or freeze escrowed tokens. | Confirmed by code inspection and invariant tests (`admin_cannot_withdraw_funds`). |
+| ID | Severity | Status | Location | Finding Description | Resolution & Verification |
+|---|---|---|---|---|---|
+| **SR-01** | Low | **CLOSED** | `help_request::refund` | `request.raised - request.total_released` used unchecked subtraction instead of `checked_sub`, and did not extend the `Request` persistent entry TTL during refund waves. | Replaced with `request.raised.checked_sub(request.total_released).ok_or(Error::InvalidAmount)?` and added `extend_ttl` on `DataKey::Request(request_id)`. Verified in `prop_proportional_refunds_conserve_funds_across_random_contributors`. |
+| **SR-02** | Low | **CLOSED** | `help_request::submit_milestone`, `approve_milestone`, `release_milestone`, `dispute_milestone` | Instance storage TTL was not extended during milestone phase operations (`submit`, `approve`, `release`, `dispute`), which could allow instance config TTL to lag during long milestone delivery schedules. | Added `storage.extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO)` to all four milestone functions and extended `Request` TTL in `approve_milestone`. Verified across milestone lifecycle tests. |
+| **SR-03** | Low | **CLOSED** | `help_request::create_request`, `approve_milestone` & `attestation::attest` | Counter increments (`id + 1`, `count + 1`, `next_id + 1`) used standard `+` operator instead of `checked_add(1)`. | Replaced all counter increments with `.checked_add(1)` returning a typed contract error on overflow. Verified in crate unit test suites. |
+| **SR-04** | Low | **CLOSED** | `reputation::record_event` | `Error::InvalidDelta` (code 4) was defined in `reputation/src/errors.rs` but `record_event` accepted `delta == 0` and used `saturating_add` instead of `checked_add`. | Added explicit `if delta == 0 { return Err(Error::InvalidDelta); }` validation, replaced `saturating_add` with `checked_add(delta as i64).ok_or(Error::InvalidDelta)?`, and extended TTLs on `Instance`, `Reporter`, and `Score`. Verified in `reputation::test::record_event_zero_delta_fails`. |
+| **SR-05** | Informational | **VERIFIED** | `help_request` Admin Custody Check | Verified that `Admin` only controls `Config` (`allowed_tokens`, `min_contribution`, `approvers`, `approval_threshold`, `reputation_contract`) and cannot withdraw, redirect, or freeze escrowed tokens. | Confirmed by code inspection, `docs/audit-prep.md` Invariant 2, and `admin_cannot_withdraw_funds`. |
+
+---
+
+## 4. Day 6 Final Verification Summary
+
+- **Workspace Tests:** All unit, integration, upgrade/migration, and randomized conservation property tests pass (`cargo test --workspace`).
+- **Static Analysis & Documentation:** `cargo clippy --workspace --all-targets -- -D warnings` and `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` pass with zero warnings.
+- **Dependency Hygiene:** `deny.toml` configured for advisories, licenses, bans, and crates.io source verification in `audit.yml`.
+- **Open High/Medium/Low Findings:** `0` open findings. Ready for `v0.1.0-testnet` tag and external audit handoff (`docs/audit-prep.md`).

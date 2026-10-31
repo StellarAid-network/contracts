@@ -10,9 +10,9 @@ Built via `make optimize` (`stellar contract build` with spec shaking v2 and `wa
 
 | Contract | Crate | Unoptimized Size | Optimized Size | Reduction | Budget Limit (64 KiB) | SHA-256 Hash (`wasmHash`) |
 |---|---|---|---|---|---|---|
-| **Help Request** | `contracts/help_request` | 28,359 bytes | **25,183 bytes** (24.6 KiB) | -11.2% | 38.4% of limit | `43e6a0ae6e934788787654d0ef7460acc68c261ad85d6918cc898c43d2e2768f` |
-| **Reputation** | `contracts/reputation` | 6,939 bytes | **6,076 bytes** (5.9 KiB) | -12.4% | 9.3% of limit | `610058f5840c3bbd4f9bb56dddf8a62ed3f6959d02fed7683a0d28cd0014524b` |
-| **Attestation** | `contracts/attestation` | 8,730 bytes | **7,624 bytes** (7.4 KiB) | -12.7% | 11.6% of limit | `bb2114eadc35f4045e4d6a2d2f85163a7791496c019448a1e5687b0e3056694b` |
+| **Help Request** | `contracts/help_request` | 29,443 bytes | **26,267 bytes** (25.7 KiB) | -10.8% | 40.1% of limit | `273b024842b5c11fd85deb2766fd6b7cf54c595149a62efcc2b6a0e7d060087e` |
+| **Reputation** | `contracts/reputation` | 7,415 bytes | **6,552 bytes** (6.4 KiB) | -11.6% | 10.0% of limit | `f9b88fb4a31247ab6eaff4845622c7db28358c3e6cc9bd52add577ac36ffb6cf` |
+| **Attestation** | `contracts/attestation` | 9,126 bytes | **8,020 bytes** (7.8 KiB) | -12.1% | 12.2% of limit | `21b89312d055119971c3e7c9e7e21c314d14edab292ac3fa9e1236579b0454b2` |
 
 ---
 

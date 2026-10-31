@@ -1,8 +1,7 @@
 //! Event definitions and helpers for the Help Request contract.
 //!
-//! Event shapes are public API consumed by the `api` indexer; treat changes as breaking.
-//! These helpers only format and publish events. Business logic that calls them is not
-//! implemented yet.
+//! Event shapes are public API consumed by the `api` indexer (`@stellar-aid/sdk/events`);
+//! treat any topic or payload field change as a breaking ABI change.
 
 use soroban_sdk::{contractevent, Address, BytesN, Env};
 
@@ -10,10 +9,15 @@ use soroban_sdk::{contractevent, Address, BytesN, Env};
 #[contractevent(topics = ["created"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Created {
+    /// Monotonic request identifier assigned at creation.
     pub request_id: u64,
+    /// Account that opened the help request.
     pub creator: Address,
+    /// Escrowed SAC token contract address.
     pub token: Address,
+    /// Target funding goal in the token's smallest unit.
     pub goal: i128,
+    /// Funding deadline as a ledger UNIX timestamp in seconds.
     pub deadline: u64,
 }
 
@@ -21,9 +25,13 @@ pub struct Created {
 #[contractevent(topics = ["contributed"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Contributed {
+    /// Target help request identifier.
     pub request_id: u64,
+    /// Account transferring tokens into escrow.
     pub contributor: Address,
+    /// Amount contributed in this call.
     pub amount: i128,
+    /// Updated cumulative amount raised for the request.
     pub total_raised: i128,
 }
 
@@ -31,7 +39,9 @@ pub struct Contributed {
 #[contractevent(topics = ["funded"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Funded {
+    /// Help request identifier that reached its funding goal.
     pub request_id: u64,
+    /// Total escrowed amount when funded.
     pub total_raised: i128,
 }
 
@@ -39,7 +49,9 @@ pub struct Funded {
 #[contractevent(topics = ["failed"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Failed {
+    /// Help request identifier that missed its deadline.
     pub request_id: u64,
+    /// Total amount raised prior to expiration.
     pub total_raised: i128,
 }
 
@@ -47,8 +59,11 @@ pub struct Failed {
 #[contractevent(topics = ["milestone_submitted"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MilestoneSubmitted {
+    /// Help request identifier.
     pub request_id: u64,
+    /// Zero-based sequential milestone index.
     pub index: u32,
+    /// 32-byte digest of off-chain delivery proof.
     pub evidence_hash: BytesN<32>,
 }
 
@@ -56,8 +71,11 @@ pub struct MilestoneSubmitted {
 #[contractevent(topics = ["milestone_approved"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MilestoneApproved {
+    /// Help request identifier.
     pub request_id: u64,
+    /// Zero-based sequential milestone index.
     pub index: u32,
+    /// Authorized approver address that recorded approval.
     pub approver: Address,
 }
 
@@ -65,8 +83,11 @@ pub struct MilestoneApproved {
 #[contractevent(topics = ["milestone_released"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MilestoneReleased {
+    /// Help request identifier.
     pub request_id: u64,
+    /// Zero-based sequential milestone index.
     pub index: u32,
+    /// Token amount transferred to the request creator.
     pub amount: i128,
 }
 
@@ -74,8 +95,11 @@ pub struct MilestoneReleased {
 #[contractevent(topics = ["refunded"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Refunded {
+    /// Help request identifier.
     pub request_id: u64,
+    /// Contributor receiving the refund.
     pub contributor: Address,
+    /// Token amount returned to the contributor.
     pub amount: i128,
 }
 
@@ -83,6 +107,7 @@ pub struct Refunded {
 #[contractevent(topics = ["cancelled"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cancelled {
+    /// Help request identifier cancelled by its creator.
     pub request_id: u64,
 }
 

@@ -1,0 +1,61 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "help_request-v*"
+      - "reputation-v*"
+      - "attestation-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --no-default-features --features opt || true
+
+      - name: Run lint, tests, and rustdoc check
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+          RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
+      - name: Build release WASM artifacts and checksums
+        run: |
+          cargo build --workspace --target wasm32v1-none --release
+          mkdir -p release-artifacts
+          cp target/wasm32v1-none/release/help_request.wasm release-artifacts/
+          cp target/wasm32v1-none/release/reputation.wasm release-artifacts/
+          cp target/wasm32v1-none/release/attestation.wasm release-artifacts/
+          cp deployments/testnet.json release-artifacts/
+          cp docs/ABI.md release-artifacts/
+          (cd release-artifacts && sha256sum *.wasm > SHA256SUMS.txt)
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+          generate_release_notes: true
+
+      - name: Notify SDK repository
+        if: ${{ secrets.SDK_DISPATCH_TOKEN != '' }}
+        run: |
+          curl -fsSL -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.SDK_DISPATCH_TOKEN }}" \
+            https://api.github.com/repos/StellarAid-network/sdk/dispatches \
+            -d "{\"event_type\":\"contracts-released\",\"client_payload\":{\"tag\":\"${GITHUB_REF_NAME}\"}}"

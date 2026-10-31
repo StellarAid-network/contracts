@@ -20,6 +20,7 @@ const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;
 const PERSISTENT_TTL_THRESHOLD: u32 = 120_960;
 const PERSISTENT_TTL_EXTEND_TO: u32 = 1_036_800;
 
+/// Soroban smart contract managing authorized attestors and verifiable statements.
 #[contract]
 pub struct AttestationContract;
 

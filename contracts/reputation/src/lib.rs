@@ -24,6 +24,7 @@ const DEFAULT_TIER1_THRESHOLD: i64 = 10;
 const DEFAULT_TIER2_THRESHOLD: i64 = 50;
 const DEFAULT_TIER3_THRESHOLD: i64 = 100;
 
+/// Soroban smart contract recording outcome-driven reputation scores and threshold badges.
 #[contract]
 pub struct Reputation;
 

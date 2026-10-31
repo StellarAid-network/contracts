@@ -4,15 +4,15 @@
   "contracts": {
     "help_request": {
       "id": "CBPW3FPPKPT4YWT7NSWM2EZ5AMONGQQQBPAEYZBSBWSOUGY5B26A7RLL",
-      "wasmHash": "43e6a0ae6e934788787654d0ef7460acc68c261ad85d6918cc898c43d2e2768f"
+      "wasmHash": "273b024842b5c11fd85deb2766fd6b7cf54c595149a62efcc2b6a0e7d060087e"
     },
     "reputation": {
       "id": "CC46Y6JBSNNTHPZZCLLUILMWMSNLRC3MV46UQ2REQX3N4WI6PTDPOZ2C",
-      "wasmHash": "610058f5840c3bbd4f9bb56dddf8a62ed3f6959d02fed7683a0d28cd0014524b"
+      "wasmHash": "f9b88fb4a31247ab6eaff4845622c7db28358c3e6cc9bd52add577ac36ffb6cf"
     },
     "attestation": {
       "id": "CBGSEMRF6DKWPGYGFJBQG5UEUBGFDHEJQUB5EOYTS4C746J54AYAS7GN",
-      "wasmHash": "bb2114eadc35f4045e4d6a2d2f85163a7791496c019448a1e5687b0e3056694b"
+      "wasmHash": "21b89312d055119971c3e7c9e7e21c314d14edab292ac3fa9e1236579b0454b2"
     }
   }
 }

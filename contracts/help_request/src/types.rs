@@ -60,7 +60,7 @@ pub struct Request {
     pub status: Status,
     /// IPFS CID or content hash of the off-chain description.
     pub content_hash: BytesN<32>,
-    /// Milestone schedule; empty until milestones are configured.
+    /// Sequential milestone payout schedule (1..=10 milestones summing to `goal`).
     pub milestones: Vec<Milestone>,
     /// Creation timestamp.
     pub created_at: u64,
