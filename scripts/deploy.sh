@@ -48,11 +48,23 @@ stellar contract invoke --id "${HR_ID}" --source "${SOURCE}" --network "${NETWOR
   --admin "${DEPLOYER_ADDR}" \
   --config "{\"allowed_tokens\":[\"${NATIVE_TOKEN}\"],\"approval_threshold\":1,\"approvers\":[\"${DEPLOYER_ADDR}\"],\"min_contribution\":\"1000000\",\"reputation_contract\":\"${REP_ID}\"}"
 
+case "${NETWORK}" in
+  mainnet)
+    PASSPHRASE="Public Global Stellar Network ; September 2015"
+    ;;
+  local)
+    PASSPHRASE="Standalone Network ; February 2017"
+    ;;
+  *)
+    PASSPHRASE="Test SDF Network ; September 2015"
+    ;;
+esac
+
 echo "9. Writing deployment IDs to deployments/${NETWORK}.json..."
 cat <<EOF > "deployments/${NETWORK}.json"
 {
   "network": "${NETWORK}",
-  "networkPassphrase": "Test SDF Network ; September 2015",
+  "networkPassphrase": "${PASSPHRASE}",
   "contracts": {
     "help_request": {
       "id": "${HR_ID}",

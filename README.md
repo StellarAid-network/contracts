@@ -107,7 +107,8 @@ State machine:
 ```
 contracts/
 ├── Cargo.toml                  # Workspace manifest
-├── Makefile                    # Common tasks (build, test, deploy, bindings)
+├── deny.toml                   # cargo-deny license and advisory configuration
+├── Makefile                    # Common tasks (build, test, lint, fmt, optimize, coverage)
 ├── rust-toolchain.toml         # Pinned toolchain
 ├── contracts/
 │   ├── help_request/
@@ -117,7 +118,7 @@ contracts/
 │   │       ├── types.rs        # Structs, enums, storage keys
 │   │       ├── errors.rs       # Error enum
 │   │       ├── events.rs       # Event helpers
-│   │       └── test.rs         # Unit and integration tests
+│   │       └── test.rs         # Unit, property, and integration tests
 │   ├── reputation/
 │   └── attestation/
 ├── shared/                     # Shared crate: common types, helpers, constants
@@ -129,8 +130,8 @@ contracts/
 │   ├── testnet.json            # Contract IDs and wasm hashes (testnet)
 │   └── mainnet.json            # Contract IDs and wasm hashes (mainnet)
 ├── audits/                     # Published audit reports
-├── docs/                       # Design docs and threat model
-└── .github/workflows/          # CI and release workflows
+├── docs/                       # ABI.md, threat-model.md, costs.md, self-review.md, audit-prep.md, backlog.md, CONTRIBUTING-contracts.md
+└── .github/workflows/          # ci.yml, audit.yml, deploy-testnet.yml, release.yml
 ```
 
 ---
@@ -292,11 +293,11 @@ Contracts emit events that the `api` indexer consumes. Treat event shapes as **p
 | help_request | `created` | request_id, creator, token, goal, deadline |
 | help_request | `contributed` | request_id, contributor, amount, total_raised |
 | help_request | `funded` / `failed` | request_id, total_raised |
-| help_request | `milestone_submitted` / `milestone_approved` / `milestone_released` | request_id, index, ... |
+| help_request | `milestone_submitted` / `milestone_approved` / `milestone_released` / `milestone_disputed` | request_id, index, ... |
 | help_request | `refunded` | request_id, contributor, amount |
 | help_request | `cancelled` | request_id |
-| reputation | `score_changed` | subject, delta, new_score, ref_id |
-| attestation | `attested` / `revoked` | attestation_id, attestor, subject |
+| reputation | `score_changed` / `reporter_added` / `reporter_removed` | subject, delta, new_score, ref_id |
+| attestation | `attested` / `revoked` / `attestor_added` / `attestor_removed` | attestation_id, attestor, subject |
 
 > Soroban RPC retains events only for a limited window, so the indexer must run continuously and persist its cursor.
 
